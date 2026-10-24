@@ -1,6 +1,6 @@
 import React from 'react';
 import { Quest } from '../types/game';
-import { X, Target, Zap, CheckCircle2, Gift } from 'lucide-react';
+import { X, Target, Zap, CheckCircle2, Gift, Sparkles, Compass } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 
 interface TeamQuestsModalProps {
@@ -11,6 +11,8 @@ interface TeamQuestsModalProps {
   maxSharedAtp: number;
   photosynthesisReady: boolean;
   onDonateAtp: () => void;
+  onTogglePhotosynthesisSimulation?: () => void;
+  onTeleportToChloroplast?: () => void;
   userAtp: number;
 }
 
@@ -22,6 +24,8 @@ export const TeamQuestsModal: React.FC<TeamQuestsModalProps> = ({
   maxSharedAtp = 25,
   photosynthesisReady,
   onDonateAtp,
+  onTogglePhotosynthesisSimulation,
+  onTeleportToChloroplast,
   userAtp,
 }) => {
   if (!isOpen) return null;
@@ -82,19 +86,58 @@ export const TeamQuestsModal: React.FC<TeamQuestsModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
               <div className="text-xs text-slate-400">
                 ATP Kamu: <span className="font-bold text-amber-400">{userAtp} ATP</span>
               </div>
-              <button
-                disabled={userAtp < 1 || photosynthesisReady}
-                onClick={onDonateAtp}
-                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
-              >
-                <Zap className="w-4 h-4" />
-                {photosynthesisReady ? 'Fotosintesis Telah Aktif!' : 'Donasikan 1 ATP'}
-              </button>
+              <div className="flex items-center gap-2">
+                {onTogglePhotosynthesisSimulation && (
+                  <button
+                    onClick={onTogglePhotosynthesisSimulation}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold rounded-xl text-[11px] border border-emerald-500/40 active:scale-95 transition-all flex items-center gap-1"
+                    title="Nyalakan/matikan partikel fotosintesis untuk demonstrasi kelas"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{photosynthesisReady ? 'Matikan Simulasi' : 'Uji Partikel'}</span>
+                  </button>
+                )}
+                <button
+                  disabled={userAtp < 1 || photosynthesisReady}
+                  onClick={onDonateAtp}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+                >
+                  <Zap className="w-4 h-4" />
+                  {photosynthesisReady ? 'Fotosintesis Aktif!' : 'Donasikan 1 ATP'}
+                </button>
+              </div>
             </div>
+
+            {/* Particle Status & Teleport Link */}
+            {photosynthesisReady && (
+              <div className="p-3 bg-emerald-900/40 border border-emerald-400/50 rounded-xl flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <span className="text-base">✨</span>
+                  <div>
+                    <span className="font-bold text-white block">Sistem Partikel Kloroplas Menyala!</span>
+                    <span className="text-[10px] text-emerald-300">
+                      Foton cahaya, gelembung O₂ dan kristal glukosa sedang memancar di dunia 3D.
+                    </span>
+                  </div>
+                </div>
+                {onTeleportToChloroplast && (
+                  <button
+                    onClick={() => {
+                      onTeleportToChloroplast();
+                      onClose();
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow active:scale-95 transition-all whitespace-nowrap flex items-center gap-1"
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Lihat Partikel</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Individual Quests List */}

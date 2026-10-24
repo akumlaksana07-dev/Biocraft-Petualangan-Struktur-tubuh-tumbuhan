@@ -23,6 +23,7 @@ import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { ChatOverlay } from './components/ChatOverlay';
 import { TriviaPopupModal, EXPLORATION_TRIVIA_POOL, TriviaItem } from './components/TriviaPopupModal';
 import { DeveloperProfileModal } from './components/DeveloperProfileModal';
+import { MiniMap } from './components/MiniMap';
 import { sounds } from './utils/soundEffects';
 import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -52,6 +53,11 @@ export default function App() {
   const [atpCount, setAtpCount] = useState<number>(15);
   const [score, setScore] = useState<number>(0);
   const [remotePlayers, setRemotePlayers] = useState<PlayerData[]>([]);
+
+  // Mini-Map Real-Time Position & Collectibles State
+  const [mapPlayerPos, setMapPlayerPos] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
+  const [mapPlayerRotY, setMapPlayerRotY] = useState<number>(0);
+  const [mapCollectibles, setMapCollectibles] = useState<{ id: string; x: number; z: number; collected: boolean }[]>([]);
 
   // Cooperative State
   const [sharedAtp, setSharedAtp] = useState<number>(8);
@@ -199,6 +205,17 @@ export default function App() {
 
     const world = new CellWorld3D(mountRef.current);
     worldRef.current = world;
+    world.setPhotosynthesisActive(photosynthesisReady);
+
+    // Initialize collectibles for mini-map
+    setMapCollectibles(
+      world.collectibles.map((c) => ({
+        id: c.id,
+        x: c.position.x,
+        z: c.position.z,
+        collected: c.collected,
+      }))
+    );
 
     // Create Local Avatar
     const localAvatar = new Avatar3D(customization, playerName, playerTitle);
@@ -210,6 +227,7 @@ export default function App() {
 
     let animationFrameId: number;
     let lastNetworkSync = 0;
+    let lastMapSync = 0;
     const clock = new THREE.Clock();
 
     const renderLoop = () => {
@@ -300,6 +318,16 @@ export default function App() {
             setScore((prev) => prev + 5);
             showToast('⚡ +1 Molekul Energi ATP Diperoleh!');
 
+            // Update mini-map collectibles
+            setMapCollectibles(
+              world.collectibles.map((c) => ({
+                id: c.id,
+                x: c.position.x,
+                z: c.position.z,
+                collected: c.collected,
+              }))
+            );
+
             // Record Quest & Achievement
             setQuests((prev) =>
               prev.map((q) => (q.id === 'q3' ? { ...q, currentCount: q.currentCount + 1 } : q))
@@ -323,8 +351,16 @@ export default function App() {
       });
       setNearbyOrganelle(closest);
 
-      // 5. Network Sync (throttle to 15 times/sec)
       const now = performance.now();
+
+      // Sync mini-map position (throttled ~12 times/sec for smooth non-blocking UI update)
+      if (now - lastMapSync > 80) {
+        lastMapSync = now;
+        setMapPlayerPos({ x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z });
+        setMapPlayerRotY(localAvatar.group.rotation.y);
+      }
+
+      // 5. Network Sync (throttle to 15 times/sec)
       if (now - lastNetworkSync > 66 && socketRef.current?.readyState === WebSocket.OPEN) {
         lastNetworkSync = now;
         socketRef.current.send(
@@ -475,6 +511,13 @@ export default function App() {
       socketRef.current?.close();
     };
   }, [connectWebSocket, currentRoom]);
+
+  // Sync photosynthesis state to 3D CellWorld
+  useEffect(() => {
+    if (worldRef.current) {
+      worldRef.current.setPhotosynthesisActive(photosynthesisReady);
+    }
+  }, [photosynthesisReady]);
 
   // Handle Switch Room
   const handleSwitchRoom = (newRoom: string) => {
@@ -726,6 +769,19 @@ export default function App() {
         onOpenDeveloperProfile={() => setActiveModal('developer')}
       />
 
+      {/* 7. Real-Time Interactive Mini-Map (Pojok Kanan Bawah) */}
+      <MiniMap
+        playerPos={mapPlayerPos}
+        playerRotY={mapPlayerRotY}
+        remotePlayers={remotePlayers}
+        collectibles={mapCollectibles}
+        onSelectOrganelle={(org) => {
+          setActiveOrganelleToScan(org);
+          setActiveModal('scanner');
+        }}
+        onTeleportTo={handleTeleportTo}
+      />
+
       {/* ================= MODALS ================= */}
 
       {/* Avatar Customizer */}
@@ -761,6 +817,8 @@ export default function App() {
             recordAchievementProgress('ach_build_cell', 1);
           } else if (reason.includes('Glukosa')) {
             recordAchievementProgress('ach_photosynthesis', 1);
+            setPhotosynthesisReady(true);
+            showToast('🌱 Partikel Kloroplas Menyala setelah Reaksi Fotosintesis!');
           } else if (reason.includes('Stomata')) {
             recordAchievementProgress('ach_stomata_master', 1);
           }
@@ -826,6 +884,20 @@ export default function App() {
         maxSharedAtp={25}
         photosynthesisReady={photosynthesisReady}
         onDonateAtp={handleDonateAtp}
+        onTogglePhotosynthesisSimulation={() => {
+          const next = !photosynthesisReady;
+          setPhotosynthesisReady(next);
+          if (next) {
+            sounds.playCorrect();
+            confetti({ particleCount: 100, spread: 80 });
+            showToast('🌱 Partikel Fotosintesis Kloroplas DIAKTIFKAN!');
+          } else {
+            showToast('Partikel Fotosintesis Dinonaktifkan.');
+          }
+        }}
+        onTeleportToChloroplast={() => {
+          handleTeleportTo([-22, 1.5, 20]);
+        }}
         userAtp={atpCount}
       />
 

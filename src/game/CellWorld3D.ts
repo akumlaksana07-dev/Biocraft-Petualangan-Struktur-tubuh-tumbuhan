@@ -31,6 +31,35 @@ export class CellWorld3D {
   private stomataPores: THREE.Group | null = null;
   private atpTurbines: THREE.Mesh[] = [];
 
+  // Photosynthesis Particle System around Chloroplast
+  public isPhotosynthesisActive: boolean = false;
+  private chlorGroup: THREE.Group | null = null;
+  private photosynthesisParticleGroup: THREE.Group | null = null;
+  private photonParticles: THREE.Points | null = null;
+  private photonGeo: THREE.BufferGeometry | null = null;
+  private photonPositions: Float32Array | null = null;
+  private photonAngles: Float32Array | null = null;
+  private photonSpeeds: Float32Array | null = null;
+  private photonRadii: Float32Array | null = null;
+  private photonHeights: Float32Array | null = null;
+
+  private oxygenParticles: THREE.Points | null = null;
+  private oxygenGeo: THREE.BufferGeometry | null = null;
+  private oxygenPositions: Float32Array | null = null;
+  private oxygenSpeeds: Float32Array | null = null;
+  private oxygenWobbles: Float32Array | null = null;
+
+  private glucoseParticles: THREE.Points | null = null;
+  private glucoseGeo: THREE.BufferGeometry | null = null;
+  private glucosePositions: Float32Array | null = null;
+  private glucoseVelocities: Float32Array | null = null;
+  private glucoseLifetimes: Float32Array | null = null;
+
+  private sunBeamMesh: THREE.Mesh | null = null;
+  private chloroplastAuraRing: THREE.Mesh | null = null;
+  private chloroplastLight: THREE.PointLight | null = null;
+  private particleTextures: THREE.CanvasTexture[] = [];
+
   constructor(container: HTMLDivElement) {
     // 1. Detect software WebGL as instructed by skill
     this.isSoftwareGl = (() => {
@@ -253,6 +282,7 @@ export class CellWorld3D {
     // 1. KLOROPLAS (Chloroplast) - Emerald stadium capsule with thylakoid coin stacks
     const chlorGroup = new THREE.Group();
     chlorGroup.position.set(-22, 0, 12);
+    this.chlorGroup = chlorGroup;
 
     // Translucent emerald shell
     const outerShellGeo = new THREE.SphereGeometry(6, 24, 16);
@@ -295,6 +325,9 @@ export class CellWorld3D {
         this.thylakoidDiscs.push(disc);
       }
     });
+
+    // Build the dynamic photosynthesis particle system inside Chloroplast
+    this.buildChloroplastParticleSystem();
 
     this.organellesGroup.add(chlorGroup);
 
@@ -739,6 +772,346 @@ export class CellWorld3D {
         ring.scale.set(s, s, s);
       }
     });
+
+    // Animate Photosynthesis Particle System when active
+    if (this.isPhotosynthesisActive && this.photosynthesisParticleGroup) {
+      this.photosynthesisParticleGroup.visible = true;
+
+      // 1. Photons swirl around chloroplast
+      if (
+        this.photonGeo &&
+        this.photonPositions &&
+        this.photonAngles &&
+        this.photonSpeeds &&
+        this.photonRadii &&
+        this.photonHeights
+      ) {
+        const pCount = this.photonAngles.length;
+        for (let i = 0; i < pCount; i++) {
+          this.photonAngles[i] += this.photonSpeeds[i] * delta * 1.6;
+          const a = this.photonAngles[i];
+          const r = this.photonRadii[i];
+          const h = this.photonHeights[i];
+
+          // Ellipsoidal orbit matching chloroplast shape
+          this.photonPositions[i * 3] = Math.cos(a) * r * 1.35;
+          this.photonPositions[i * 3 + 1] = h + Math.sin(this.animTime * 2.5 + a * 2) * 0.9;
+          this.photonPositions[i * 3 + 2] = Math.sin(a) * r * 0.95;
+        }
+        this.photonGeo.attributes.position.needsUpdate = true;
+      }
+
+      // 2. Oxygen bubbles rise and wobble upwards
+      if (this.oxygenGeo && this.oxygenPositions && this.oxygenSpeeds && this.oxygenWobbles) {
+        const oCount = this.oxygenSpeeds.length;
+        for (let i = 0; i < oCount; i++) {
+          this.oxygenPositions[i * 3 + 1] += this.oxygenSpeeds[i] * delta * 2.2;
+          this.oxygenWobbles[i] += delta * 3.5;
+
+          // Subtle horizontal wobble
+          this.oxygenPositions[i * 3] += Math.sin(this.oxygenWobbles[i]) * 0.04;
+          this.oxygenPositions[i * 3 + 2] += Math.cos(this.oxygenWobbles[i] * 1.2) * 0.04;
+
+          // Reset when reached upper cytoplasm height
+          if (this.oxygenPositions[i * 3 + 1] > 16.0) {
+            this.oxygenPositions[i * 3 + 1] = 1.0 + Math.random() * 2.0;
+            this.oxygenPositions[i * 3] = (Math.random() - 0.5) * 6.5;
+            this.oxygenPositions[i * 3 + 2] = (Math.random() - 0.5) * 4.0;
+          }
+        }
+        this.oxygenGeo.attributes.position.needsUpdate = true;
+      }
+
+      // 3. Glucose & ATP energy particles radiate outwards
+      if (this.glucoseGeo && this.glucosePositions && this.glucoseVelocities && this.glucoseLifetimes) {
+        const gCount = this.glucoseLifetimes.length;
+        for (let i = 0; i < gCount; i++) {
+          this.glucoseLifetimes[i] += delta;
+          this.glucosePositions[i * 3] += this.glucoseVelocities[i * 3] * delta;
+          this.glucosePositions[i * 3 + 1] += this.glucoseVelocities[i * 3 + 1] * delta;
+          this.glucosePositions[i * 3 + 2] += this.glucoseVelocities[i * 3 + 2] * delta;
+
+          if (this.glucoseLifetimes[i] > 2.8) {
+            this.resetGlucoseParticle(i, false);
+          }
+        }
+        this.glucoseGeo.attributes.position.needsUpdate = true;
+      }
+
+      // 4. Sunbeam rotation and ethereal breathing
+      if (this.sunBeamMesh) {
+        this.sunBeamMesh.rotation.y += delta * 0.4;
+        const beamMat = this.sunBeamMesh.material as THREE.MeshBasicMaterial;
+        beamMat.opacity = 0.22 + Math.sin(this.animTime * 3) * 0.08;
+      }
+
+      // 5. Chloroplast aura ring expansion & pulse
+      if (this.chloroplastAuraRing) {
+        const pulse = 1.0 + Math.sin(this.animTime * 4) * 0.12;
+        this.chloroplastAuraRing.scale.set(pulse, pulse, pulse);
+        this.chloroplastAuraRing.rotation.z += delta * 0.6;
+      }
+
+      // 6. Dynamic Point Light pulse
+      if (this.chloroplastLight) {
+        const targetIntensity = 2.8 + Math.sin(this.animTime * 3.5) * 0.6;
+        this.chloroplastLight.intensity = THREE.MathUtils.damp(
+          this.chloroplastLight.intensity,
+          targetIntensity,
+          4,
+          delta
+        );
+      }
+    } else if (this.photosynthesisParticleGroup && this.photosynthesisParticleGroup.visible) {
+      // Fade out light when turned off
+      if (this.chloroplastLight && this.chloroplastLight.intensity > 0.05) {
+        this.chloroplastLight.intensity = THREE.MathUtils.damp(this.chloroplastLight.intensity, 0, 5, delta);
+      } else {
+        this.photosynthesisParticleGroup.visible = false;
+      }
+    }
+  }
+
+  public setPhotosynthesisActive(active: boolean) {
+    this.isPhotosynthesisActive = active;
+    if (active && this.photosynthesisParticleGroup) {
+      this.photosynthesisParticleGroup.visible = true;
+    }
+  }
+
+  private buildChloroplastParticleSystem() {
+    if (!this.chlorGroup) return;
+
+    this.photosynthesisParticleGroup = new THREE.Group();
+    this.photosynthesisParticleGroup.visible = false; // Initially dormant until activated
+
+    // 1. Procedural Glow Textures (Zero 404 dependencies)
+    const photonTexture = this.createProceduralParticleTexture('photon');
+    const oxygenTexture = this.createProceduralParticleTexture('oxygen');
+    const glucoseTexture = this.createProceduralParticleTexture('glucose');
+    this.particleTextures.push(photonTexture, oxygenTexture, glucoseTexture);
+
+    // 2. Foton & Klorofil Excitation Particles (Swirling Orbiters)
+    const photonCount = this.isSoftwareGl ? 140 : 280;
+    this.photonGeo = new THREE.BufferGeometry();
+    this.photonPositions = new Float32Array(photonCount * 3);
+    this.photonAngles = new Float32Array(photonCount);
+    this.photonSpeeds = new Float32Array(photonCount);
+    this.photonRadii = new Float32Array(photonCount);
+    this.photonHeights = new Float32Array(photonCount);
+    const photonColors = new Float32Array(photonCount * 3);
+
+    for (let i = 0; i < photonCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 4.2 + Math.random() * 5.2;
+      const height = 1.0 + Math.random() * 6.5;
+      const speed = (0.8 + Math.random() * 1.6) * (Math.random() > 0.3 ? 1 : -1);
+
+      this.photonAngles[i] = angle;
+      this.photonSpeeds[i] = speed;
+      this.photonRadii[i] = radius;
+      this.photonHeights[i] = height;
+
+      this.photonPositions[i * 3] = Math.cos(angle) * radius * 1.35;
+      this.photonPositions[i * 3 + 1] = height;
+      this.photonPositions[i * 3 + 2] = Math.sin(angle) * radius * 0.95;
+
+      // Color variation: Lime Green, Solar Yellow, Cyan
+      const colorType = Math.random();
+      if (colorType < 0.6) {
+        // Chlorophyll neon green
+        photonColors[i * 3] = 0.3;
+        photonColors[i * 3 + 1] = 0.95;
+        photonColors[i * 3 + 2] = 0.45;
+      } else if (colorType < 0.85) {
+        // Solar photon gold
+        photonColors[i * 3] = 0.98;
+        photonColors[i * 3 + 1] = 0.88;
+        photonColors[i * 3 + 2] = 0.2;
+      } else {
+        // Excited reaction center cyan
+        photonColors[i * 3] = 0.25;
+        photonColors[i * 3 + 1] = 0.9;
+        photonColors[i * 3 + 2] = 0.85;
+      }
+    }
+
+    this.photonGeo.setAttribute('position', new THREE.BufferAttribute(this.photonPositions, 3));
+    this.photonGeo.setAttribute('color', new THREE.BufferAttribute(photonColors, 3));
+
+    const photonMat = new THREE.PointsMaterial({
+      size: this.isSoftwareGl ? 0.7 : 0.9,
+      map: photonTexture,
+      transparent: true,
+      opacity: 0.88,
+      vertexColors: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.photonParticles = new THREE.Points(this.photonGeo, photonMat);
+    this.photosynthesisParticleGroup.add(this.photonParticles);
+
+    // 3. Gelembung Oksigen (O2 Bubbles rising upwards)
+    const o2Count = this.isSoftwareGl ? 50 : 110;
+    this.oxygenGeo = new THREE.BufferGeometry();
+    this.oxygenPositions = new Float32Array(o2Count * 3);
+    this.oxygenSpeeds = new Float32Array(o2Count);
+    this.oxygenWobbles = new Float32Array(o2Count);
+
+    for (let i = 0; i < o2Count; i++) {
+      // Spawn within grana stack boundary
+      const sx = (Math.random() - 0.5) * 6.5;
+      const sz = (Math.random() - 0.5) * 4.0;
+      const sy = 1.0 + Math.random() * 14.0;
+
+      this.oxygenPositions[i * 3] = sx;
+      this.oxygenPositions[i * 3 + 1] = sy;
+      this.oxygenPositions[i * 3 + 2] = sz;
+
+      this.oxygenSpeeds[i] = 1.4 + Math.random() * 2.2;
+      this.oxygenWobbles[i] = Math.random() * Math.PI * 2;
+    }
+
+    this.oxygenGeo.setAttribute('position', new THREE.BufferAttribute(this.oxygenPositions, 3));
+    const oxygenMat = new THREE.PointsMaterial({
+      size: this.isSoftwareGl ? 0.8 : 1.1,
+      map: oxygenTexture,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.oxygenParticles = new THREE.Points(this.oxygenGeo, oxygenMat);
+    this.photosynthesisParticleGroup.add(this.oxygenParticles);
+
+    // 4. Molekul Glukosa & ATP (Radiating Outward into Cytoplasm)
+    const glucoseCount = this.isSoftwareGl ? 40 : 80;
+    this.glucoseGeo = new THREE.BufferGeometry();
+    this.glucosePositions = new Float32Array(glucoseCount * 3);
+    this.glucoseVelocities = new Float32Array(glucoseCount * 3);
+    this.glucoseLifetimes = new Float32Array(glucoseCount);
+
+    for (let i = 0; i < glucoseCount; i++) {
+      this.resetGlucoseParticle(i, true);
+    }
+
+    this.glucoseGeo.setAttribute('position', new THREE.BufferAttribute(this.glucosePositions, 3));
+    const glucoseMat = new THREE.PointsMaterial({
+      size: this.isSoftwareGl ? 0.75 : 1.0,
+      map: glucoseTexture,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.glucoseParticles = new THREE.Points(this.glucoseGeo, glucoseMat);
+    this.photosynthesisParticleGroup.add(this.glucoseParticles);
+
+    // 5. Apical Solar Sunbeam
+    const sunBeamGeo = new THREE.CylinderGeometry(1.8, 6.2, 18, 16, 1, true);
+    const sunBeamMat = new THREE.MeshBasicMaterial({
+      color: 0x86efac,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.sunBeamMesh = new THREE.Mesh(sunBeamGeo, sunBeamMat);
+    this.sunBeamMesh.position.set(0, 10, 0);
+    this.photosynthesisParticleGroup.add(this.sunBeamMesh);
+
+    // 6. Resonance Light Halo Ring
+    const haloGeo = new THREE.TorusGeometry(7.6, 0.18, 8, 32);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0x4ade80,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.chloroplastAuraRing = new THREE.Mesh(haloGeo, haloMat);
+    this.chloroplastAuraRing.position.set(0, 4, 0);
+    this.chloroplastAuraRing.rotation.x = Math.PI / 2;
+    this.photosynthesisParticleGroup.add(this.chloroplastAuraRing);
+
+    // 7. Dynamic Chlorophyll Glow Point Light
+    this.chloroplastLight = new THREE.PointLight(0x4ade80, 0, 24);
+    this.chloroplastLight.position.set(0, 4.5, 0);
+    this.photosynthesisParticleGroup.add(this.chloroplastLight);
+
+    this.chlorGroup.add(this.photosynthesisParticleGroup);
+  }
+
+  private resetGlucoseParticle(i: number, randomStart: boolean) {
+    if (!this.glucosePositions || !this.glucoseVelocities || !this.glucoseLifetimes) return;
+    const progress = randomStart ? Math.random() : 0;
+    const angle = Math.random() * Math.PI * 2;
+    const elevation = (Math.random() - 0.5) * Math.PI * 0.7;
+    const speed = 2.0 + Math.random() * 2.5;
+
+    const vx = Math.cos(angle) * Math.cos(elevation) * speed;
+    const vy = Math.sin(elevation) * speed * 0.8;
+    const vz = Math.sin(angle) * Math.cos(elevation) * speed;
+
+    this.glucoseVelocities[i * 3] = vx;
+    this.glucoseVelocities[i * 3 + 1] = vy;
+    this.glucoseVelocities[i * 3 + 2] = vz;
+
+    this.glucosePositions[i * 3] = vx * progress * 2.0;
+    this.glucosePositions[i * 3 + 1] = 4.0 + vy * progress * 2.0;
+    this.glucosePositions[i * 3 + 2] = vz * progress * 2.0;
+
+    this.glucoseLifetimes[i] = progress * 2.8;
+  }
+
+  private createProceduralParticleTexture(type: 'photon' | 'oxygen' | 'glucose'): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+
+    if (type === 'photon') {
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      grad.addColorStop(0.2, 'rgba(167, 243, 208, 0.95)');
+      grad.addColorStop(0.5, 'rgba(74, 222, 128, 0.6)');
+      grad.addColorStop(0.8, 'rgba(21, 128, 61, 0.2)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+    } else if (type === 'oxygen') {
+      // Oxygen O2 spherical gas bubble
+      const grad = ctx.createRadialGradient(24, 24, 2, 32, 32, 30);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+      grad.addColorStop(0.35, 'rgba(186, 230, 253, 0.6)');
+      grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.3)');
+      grad.addColorStop(0.9, 'rgba(14, 165, 233, 0.85)'); // Bright luminous edge
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(32, 32, 30, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Specular shine highlight
+      ctx.beginPath();
+      ctx.arc(24, 22, 7, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fill();
+    } else {
+      // Glucose C6H12O6 / ATP star crystal
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      grad.addColorStop(0.25, 'rgba(254, 240, 138, 0.95)');
+      grad.addColorStop(0.6, 'rgba(245, 158, 11, 0.55)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
   }
 
   public resize(width: number, height: number) {
@@ -748,6 +1121,10 @@ export class CellWorld3D {
   }
 
   public destroy() {
+    this.particleTextures.forEach((t) => t.dispose());
+    this.photonGeo?.dispose();
+    this.oxygenGeo?.dispose();
+    this.glucoseGeo?.dispose();
     this.renderer.dispose();
   }
 }
