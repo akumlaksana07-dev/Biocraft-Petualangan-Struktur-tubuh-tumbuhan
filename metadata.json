@@ -1,0 +1,6 @@
+{
+  "name": "BioCraft 3D: Petualangan Sel & Struktur Tumbuhan SMP Kelas VIII",
+  "description": "Game petualangan 3D ala Roblox untuk IPA SMP Kelas VIII. Jelajahi struktur tubuh tumbuhan dan sel tumbuhan secara interaktif dengan avatar terintegrasi, kontrol seluler, dan multiplayer real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
