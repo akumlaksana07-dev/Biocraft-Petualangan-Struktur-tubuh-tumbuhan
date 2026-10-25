@@ -1,6 +1,7 @@
 import React from 'react';
-import { Customization } from '../types/game';
-import { X, Check, Sparkles, User, Palette, Crown } from 'lucide-react';
+import { Customization, FootstepTrailTheme, FootstepTrailLevel } from '../types/game';
+import { TRAIL_THEMES_METADATA, TRAIL_LEVELS_METADATA } from '../game/FootstepTrailSystem';
+import { X, Check, Sparkles, User, Palette, Crown, Footprints } from 'lucide-react';
 
 interface AvatarCustomizerModalProps {
   isOpen: boolean;
@@ -249,6 +250,79 @@ export const AvatarCustomizerModal: React.FC<AvatarCustomizerModalProps> = ({
                   <span className="text-xs font-semibold">{acc.label}</span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Footstep Bioluminescent Trail & Levels */}
+          <div className="bg-slate-800/60 p-4 rounded-2xl border border-emerald-500/30 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <Footprints className="w-4 h-4" />
+                <span>Jejak Bioluminesensi Langkah Kaki</span>
+              </div>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                Efek Visual Eksplorasi
+              </span>
+            </div>
+
+            {/* Trail Level */}
+            <div>
+              <span className="text-xs text-slate-400 font-semibold mb-2 block">Tingkat Pendaran (Level Efek):</span>
+              <div className="grid grid-cols-3 gap-2">
+                {([1, 2, 3] as FootstepTrailLevel[]).map((lvl) => {
+                  const meta = TRAIL_LEVELS_METADATA[lvl];
+                  const isSel = (customization.trailLevel || 2) === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      onClick={() => onUpdate({ ...customization, trailLevel: lvl })}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        isSel
+                          ? 'bg-emerald-950/80 border-emerald-400 text-white shadow-md'
+                          : 'bg-slate-900/60 border-white/10 text-slate-400 hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="text-[11px] font-black text-white">{meta.tag} (Lvl {lvl})</div>
+                      <div className="text-[9px] text-slate-300 line-clamp-1">{meta.name.split(':')[1]}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Trail Theme */}
+            <div>
+              <span className="text-xs text-slate-400 font-semibold mb-2 block">Tema Organel Sel:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(Object.keys(TRAIL_THEMES_METADATA) as FootstepTrailTheme[]).map((thmKey) => {
+                  const theme = TRAIL_THEMES_METADATA[thmKey];
+                  const isSel = (customization.trailTheme || 'chloroplast') === thmKey;
+                  return (
+                    <button
+                      key={thmKey}
+                      onClick={() => onUpdate({ ...customization, trailTheme: thmKey })}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                        isSel
+                          ? 'bg-slate-900 border-2 text-white shadow-md'
+                          : 'bg-slate-900/60 border-white/10 text-slate-400 hover:bg-slate-800'
+                      }`}
+                      style={{ borderColor: isSel ? theme.glowHex : undefined }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-lg">{theme.accentEmoji}</span>
+                        <div className="truncate">
+                          <div className="text-xs font-bold text-white truncate">{theme.name}</div>
+                          <div className="text-[9px] text-slate-400 truncate">{theme.organelleOrigin}</div>
+                        </div>
+                      </div>
+                      <div
+                        className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                        style={{ backgroundColor: theme.glowHex }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

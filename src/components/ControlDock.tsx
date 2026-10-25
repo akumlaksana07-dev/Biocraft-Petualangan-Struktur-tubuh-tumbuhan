@@ -1,11 +1,12 @@
 import React from 'react';
-import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck } from 'lucide-react';
+import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck, Footprints } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 
 interface ControlDockProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onOpenAvatarCustomizer: () => void;
+  onOpenTrailCustomizer: () => void;
   onOpenMiniGames: () => void;
   onOpenCodex: () => void;
   onOpenQuiz: () => void;
@@ -19,6 +20,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   isCollapsed,
   onToggleCollapse,
   onOpenAvatarCustomizer,
+  onOpenTrailCustomizer,
   onOpenMiniGames,
   onOpenCodex,
   onOpenQuiz,
@@ -68,6 +70,19 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         >
           <User className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 mb-0.5" />
           <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Avatar</span>
+        </button>
+
+        {/* 1b. Footstep Bioluminescent Trail */}
+        <button
+          onClick={() => {
+            sounds.playScan();
+            onOpenTrailCustomizer();
+          }}
+          className="flex flex-col items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-2xl bg-gradient-to-t from-teal-950/60 to-slate-900/60 hover:from-teal-900/80 hover:to-slate-800/80 active:scale-95 transition-all text-teal-300 hover:text-white border border-teal-500/30 hover:border-teal-400 min-w-[58px] sm:min-w-[68px]"
+          title="Ubah Tema & Level Pendaran Jejak Kaki Bioluminesensi"
+        >
+          <Footprints className="w-4 h-4 sm:w-5 sm:h-5 text-teal-300 mb-0.5" />
+          <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Jejak Kaki</span>
         </button>
 
         {/* 2. Mini-Games Lab */}

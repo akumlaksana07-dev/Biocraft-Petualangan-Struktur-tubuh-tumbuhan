@@ -1,3 +1,12 @@
+export type FootstepTrailTheme =
+  | 'chloroplast'
+  | 'mitochondria'
+  | 'vacuole'
+  | 'nucleus'
+  | 'chromoplast';
+
+export type FootstepTrailLevel = 1 | 2 | 3;
+
 export interface Customization {
   skinColor: string;
   shirtColor: string;
@@ -5,6 +14,8 @@ export interface Customization {
   face: 'smile' | 'cool' | 'goggles' | 'nerd' | 'happy' | 'determined';
   hat: 'none' | 'goggles' | 'leaf_cap' | 'scientist_hair' | 'spiky_hair' | 'peci_hijab';
   accessory: 'none' | 'backpack' | 'jetpack' | 'dna_wings' | 'microscope';
+  trailTheme?: FootstepTrailTheme;
+  trailLevel?: FootstepTrailLevel;
 }
 
 export interface PlayerData {

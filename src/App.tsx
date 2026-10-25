@@ -23,9 +23,13 @@ import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { ChatOverlay } from './components/ChatOverlay';
 import { TriviaPopupModal, EXPLORATION_TRIVIA_POOL, TriviaItem } from './components/TriviaPopupModal';
 import { DeveloperProfileModal } from './components/DeveloperProfileModal';
+import { FootstepTrailModal } from './components/FootstepTrailModal';
 import { MiniMap } from './components/MiniMap';
+import { MilestoneToast, MilestoneToastData } from './components/MilestoneToast';
+import { DirectionalIndicator } from './components/DirectionalIndicator';
+import { LevelTransitionOverlay } from './components/LevelTransitionOverlay';
 import { sounds } from './utils/soundEffects';
-import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck } from 'lucide-react';
+import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck, Footprints, Compass } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 const DEFAULT_CUSTOMIZATION: Customization = {
@@ -35,6 +39,8 @@ const DEFAULT_CUSTOMIZATION: Customization = {
   face: 'goggles',
   hat: 'goggles',
   accessory: 'backpack',
+  trailTheme: 'chloroplast',
+  trailLevel: 2,
 };
 
 export default function App() {
@@ -54,10 +60,19 @@ export default function App() {
   const [score, setScore] = useState<number>(0);
   const [remotePlayers, setRemotePlayers] = useState<PlayerData[]>([]);
 
-  // Mini-Map Real-Time Position & Collectibles State
+  // Mini-Map & Compass Real-Time Position & Collectibles State
   const [mapPlayerPos, setMapPlayerPos] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
   const [mapPlayerRotY, setMapPlayerRotY] = useState<number>(0);
+  const [mapCameraTheta, setMapCameraTheta] = useState<number>(0);
   const [mapCollectibles, setMapCollectibles] = useState<{ id: string; x: number; z: number; collected: boolean }[]>([]);
+
+  // Cinematic Exploration Warp Transition
+  const [isWarpTransitionActive, setIsWarpTransitionActive] = useState<boolean>(false);
+  const [warpTargetInfo, setWarpTargetInfo] = useState<{ title: string; subtitle: string; color?: string }>({
+    title: 'Teleportasi Organel',
+    subtitle: 'Warping Melintasi Sitosol & Mikrotubulus...',
+  });
+  const pendingTeleportPosRef = useRef<[number, number, number] | null>(null);
 
   // Cooperative State
   const [sharedAtp, setSharedAtp] = useState<number>(8);
@@ -73,14 +88,15 @@ export default function App() {
   // Modals & Navigation
   const [isDockCollapsed, setIsDockCollapsed] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'customizer' | 'mini_games' | 'scanner' | 'quiz' | 'codex' | 'achievements' | 'quests' | 'lobby' | 'developer' | null
+    'customizer' | 'trail' | 'mini_games' | 'scanner' | 'quiz' | 'codex' | 'achievements' | 'quests' | 'lobby' | 'developer' | null
   >(null);
   const [activeOrganelleToScan, setActiveOrganelleToScan] = useState<OrganelleInfo | null>(null);
   const [nearbyOrganelle, setNearbyOrganelle] = useState<OrganelleInfo | null>(null);
 
-  // Interactive Exploration Trivia
+  // Interactive Exploration Trivia (Answered questions are retired and replaced with fresh ones)
   const [currentTrivia, setCurrentTrivia] = useState<TriviaItem | null>(null);
   const [isTriviaOpen, setIsTriviaOpen] = useState(false);
+  const answeredTriviaIdsRef = useRef<Set<string>>(new Set());
   const nextTriviaDistanceRef = useRef<number>(60);
   const totalDistanceWalkedRef = useRef<number>(0);
 
@@ -98,31 +114,57 @@ export default function App() {
   const [isSprintingState, setIsSprintingState] = useState(false);
   const activeEmoteRef = useRef<'cheer' | 'dance' | null>(null);
 
+  // Dedicated Progressive Milestone Toasts (25%, 50%, 75%, 100%)
+  const [milestoneToasts, setMilestoneToasts] = useState<MilestoneToastData[]>([]);
+  const milestonesReachedRef = useRef<Set<string>>(new Set());
+
   // Show Toast helper
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
 
-  // Update Achievement Progress Helper
+  // Update Achievement Progress Helper with Gradual Milestone Recognition (25%, 50%, 75%, 100%)
   const recordAchievementProgress = useCallback(
     (achId: string, delta: number = 1) => {
       setAchievements((prev) =>
         prev.map((a) => {
           if (a.id === achId) {
+            const oldRatio = a.progress / a.maxProgress;
             const newProg = Math.min(a.maxProgress, a.progress + delta);
-            const nowUnlocked = newProg >= a.maxProgress && !a.unlocked;
-            if (nowUnlocked) {
-              sounds.playCorrect();
-              showToast(`🏆 Pencapaian Terbuka: ${a.title}!`);
-            }
+            const newRatio = newProg / a.maxProgress;
+
+            // Check milestone progression (25%, 50%, 75%, 100%)
+            const milestoneTiers: (25 | 50 | 75 | 100)[] = [25, 50, 75, 100];
+            milestoneTiers.forEach((m) => {
+              const threshold = m / 100;
+              const milestoneKey = `${a.id}_${m}`;
+              if (oldRatio < threshold && newRatio >= threshold && !milestonesReachedRef.current.has(milestoneKey)) {
+                milestonesReachedRef.current.add(milestoneKey);
+
+                setMilestoneToasts((curr) => [
+                  ...curr,
+                  {
+                    id: `m_${a.id}_${m}_${Date.now()}`,
+                    achievementId: a.id,
+                    title: a.title,
+                    icon: a.icon,
+                    percent: m,
+                    currentProgress: newProg,
+                    maxProgress: a.maxProgress,
+                    rewardLabel: a.rewardLabel,
+                  },
+                ]);
+              }
+            });
+
             return { ...a, progress: newProg };
           }
           return a;
         })
       );
     },
-    [showToast]
+    []
   );
 
   // Claim Achievement Reward
@@ -148,15 +190,91 @@ export default function App() {
     }
   };
 
-  // Keyboard controls listener (WASD, Space, Shift, E)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+  // Synchronized refs to decouple high-frequency state updates from 3D world re-mounting
+  const atpCountRef = useRef(atpCount);
+  const scoreRef = useRef(score);
+  const playerNameRef = useRef(playerName);
+  const playerTitleRef = useRef(playerTitle);
+  const customizationRef = useRef(customization);
+  const recordAchievementProgressRef = useRef(recordAchievementProgress);
+  const showToastRef = useRef(showToast);
+  const nearbyOrganelleRef = useRef<OrganelleInfo | null>(nearbyOrganelle);
+  const isTriviaOpenRef = useRef(isTriviaOpen);
+  const currentTriviaRef = useRef<TriviaItem | null>(currentTrivia);
 
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') moveVector.current.y = -1;
-      if (e.code === 'KeyS' || e.code === 'ArrowDown') moveVector.current.y = 1;
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveVector.current.x = -1;
-      if (e.code === 'KeyD' || e.code === 'ArrowRight') moveVector.current.x = 1;
+  useEffect(() => {
+    atpCountRef.current = atpCount;
+  }, [atpCount]);
+  useEffect(() => {
+    scoreRef.current = score;
+  }, [score]);
+  useEffect(() => {
+    playerNameRef.current = playerName;
+    playerTitleRef.current = playerTitle;
+  }, [playerName, playerTitle]);
+  useEffect(() => {
+    customizationRef.current = customization;
+  }, [customization]);
+  useEffect(() => {
+    nearbyOrganelleRef.current = nearbyOrganelle;
+  }, [nearbyOrganelle]);
+  useEffect(() => {
+    recordAchievementProgressRef.current = recordAchievementProgress;
+    showToastRef.current = showToast;
+  }, [recordAchievementProgress, showToast]);
+  useEffect(() => {
+    isTriviaOpenRef.current = isTriviaOpen;
+    if (isTriviaOpen) {
+      moveVector.current = { x: 0, y: 0 };
+      keysPressed.current.clear();
+    }
+  }, [isTriviaOpen]);
+  useEffect(() => {
+    currentTriviaRef.current = currentTrivia;
+  }, [currentTrivia]);
+
+  // Sync photosynthesis directly into 3D world without re-creating scene
+  useEffect(() => {
+    worldRef.current?.setPhotosynthesisActive(photosynthesisReady);
+  }, [photosynthesisReady]);
+
+  // Sync avatar customization directly into 3D world without re-creating scene
+  useEffect(() => {
+    localAvatarRef.current?.updateCustomization(customization);
+  }, [customization]);
+
+  // Sync player name and title directly into 3D world without re-creating scene
+  useEffect(() => {
+    localAvatarRef.current?.updateNameAndTitle(playerName, playerTitle);
+  }, [playerName, playerTitle]);
+
+  // Stabilized keyboard keys tracking set
+  const keysPressed = useRef<Set<string>>(new Set());
+
+  // Stabilized Keyboard controls listener (WASD, Arrow keys, Space, Shift, E, H, Q)
+  useEffect(() => {
+    const updateMoveFromKeys = () => {
+      let x = 0;
+      let y = 0;
+      if (keysPressed.current.has('KeyW') || keysPressed.current.has('ArrowUp')) y -= 1;
+      if (keysPressed.current.has('KeyS') || keysPressed.current.has('ArrowDown')) y += 1;
+      if (keysPressed.current.has('KeyA') || keysPressed.current.has('ArrowLeft')) x -= 1;
+      if (keysPressed.current.has('KeyD') || keysPressed.current.has('ArrowRight')) x += 1;
+
+      // Normalize diagonal vectors so diagonal walk isn't faster or jittery
+      if (x !== 0 && y !== 0) {
+        x *= 0.7071;
+        y *= 0.7071;
+      }
+      moveVector.current.x = x;
+      moveVector.current.y = y;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+      keysPressed.current.add(e.code);
+      updateMoveFromKeys();
 
       if (e.code === 'Space' && isGrounded.current) {
         playerVelocityY.current = 14;
@@ -170,8 +288,8 @@ export default function App() {
       }
 
       if (e.code === 'KeyE') {
-        if (nearbyOrganelle) {
-          setActiveOrganelleToScan(nearbyOrganelle);
+        if (nearbyOrganelleRef.current) {
+          setActiveOrganelleToScan(nearbyOrganelleRef.current);
           setActiveModal('scanner');
         }
       }
@@ -179,27 +297,73 @@ export default function App() {
       if (e.code === 'KeyH') {
         setIsDockCollapsed((prev) => !prev);
       }
+
+      if (e.code === 'KeyQ') {
+        if (currentTriviaRef.current && !isTriviaOpenRef.current) {
+          moveVector.current = { x: 0, y: 0 };
+          keysPressed.current.clear();
+          setIsTriviaOpen(true);
+        }
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
-      if (['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown'].includes(e.code)) moveVector.current.y = 0;
-      if (['KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code)) moveVector.current.x = 0;
-      if (['ShiftLeft', 'ShiftRight'].includes(e.code)) {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      keysPressed.current.delete(e.code);
+      updateMoveFromKeys();
+
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         isSprinting.current = false;
         setIsSprintingState(false);
       }
     };
 
+    const handleWindowBlur = () => {
+      keysPressed.current.clear();
+      moveVector.current = { x: 0, y: 0 };
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [nearbyOrganelle]);
+  }, []);
 
-  // Three.js Scene Setup & Render Loop
+  // Stabilized Memoized Touch Handlers
+  const handleMove = useCallback((vec: { x: number; y: number }) => {
+    moveVector.current = vec;
+  }, []);
+
+  const handleCameraRotate = useCallback((dx: number, dy: number) => {
+    cameraAngle.current.theta += dx * 2.5;
+    cameraAngle.current.phi = Math.max(0.1, Math.min(1.2, cameraAngle.current.phi - dy * 2.0));
+  }, []);
+
+  const handleJump = useCallback(() => {
+    if (isGrounded.current) {
+      playerVelocityY.current = 14;
+      isGrounded.current = false;
+      sounds.playJump();
+    }
+  }, []);
+
+  const handleSprintToggle = useCallback((active: boolean) => {
+    isSprinting.current = active;
+    setIsSprintingState(active);
+  }, []);
+
+  const handleScan = useCallback(() => {
+    if (nearbyOrganelleRef.current) {
+      setActiveOrganelleToScan(nearbyOrganelleRef.current);
+      setActiveModal('scanner');
+    }
+  }, []);
+
+  // Three.js Scene Setup & Render Loop (Runs ONCE on mount; never destroyed on ATP pickup)
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -218,7 +382,7 @@ export default function App() {
     );
 
     // Create Local Avatar
-    const localAvatar = new Avatar3D(customization, playerName, playerTitle);
+    const localAvatar = new Avatar3D(customizationRef.current, playerNameRef.current, playerTitleRef.current);
     localAvatarRef.current = localAvatar;
     world.scene.add(localAvatar.group);
 
@@ -239,7 +403,7 @@ export default function App() {
       const inputY = moveVector.current.y;
       const hasInput = Math.abs(inputX) > 0.05 || Math.abs(inputY) > 0.05;
 
-      if (hasInput) {
+      if (hasInput && !isTriviaOpenRef.current) {
         // Calculate move direction relative to camera theta
         const angle = Math.atan2(inputX, inputY) + cameraAngle.current.theta;
         const dx = Math.sin(angle) * speed * delta;
@@ -252,11 +416,36 @@ export default function App() {
         // Track exploration distance for random trivia trigger
         const stepDist = Math.sqrt(dx * dx + dz * dz);
         totalDistanceWalkedRef.current += stepDist;
+
+        // Emit footstep bioluminescent trail & fine dust particles under avatar's feet
+        if (isGrounded.current) {
+          world.footstepTrailSystem.updateAvatarMovement(
+            playerPos.current,
+            localAvatar.group.rotation.y,
+            stepDist,
+            isSprinting.current,
+            customizationRef.current.trailTheme || 'chloroplast',
+            customizationRef.current.trailLevel || 2
+          );
+        }
+
         if (totalDistanceWalkedRef.current >= nextTriviaDistanceRef.current) {
           totalDistanceWalkedRef.current = 0;
           nextTriviaDistanceRef.current = 80 + Math.random() * 40;
-          const randomTrivia = EXPLORATION_TRIVIA_POOL[Math.floor(Math.random() * EXPLORATION_TRIVIA_POOL.length)];
+
+          // Filter out questions that have already been answered and replace with unasked questions
+          const unaskedTrivia = EXPLORATION_TRIVIA_POOL.filter(
+            (t) => !answeredTriviaIdsRef.current.has(t.id)
+          );
+          const poolToUse = unaskedTrivia.length > 0 ? unaskedTrivia : EXPLORATION_TRIVIA_POOL;
+          if (unaskedTrivia.length === 0) {
+            answeredTriviaIdsRef.current.clear();
+          }
+          const randomTrivia = poolToUse[Math.floor(Math.random() * poolToUse.length)];
           setCurrentTrivia(randomTrivia);
+          currentTriviaRef.current = randomTrivia;
+          moveVector.current = { x: 0, y: 0 };
+          keysPressed.current.clear();
           setIsTriviaOpen(true);
         }
       }
@@ -279,7 +468,7 @@ export default function App() {
         // High bouncy trampoline jump!
         playerVelocityY.current = 22;
         sounds.playJump();
-        showToast('💧 Melompat Tinggi di Tekanan Turgor Vakuola!');
+        showToastRef.current('💧 Melompat Tinggi di Tekanan Turgor Vakuola!');
       }
 
       if (playerPos.current.y <= 0) {
@@ -309,14 +498,24 @@ export default function App() {
       // 4. Update Organelles & Collectibles
       world.update(delta);
 
-      // Check Collectibles Pickup
+      // Check Collectibles Pickup (Ultra-smooth zero-lag ATP collection)
       world.collectibles.forEach((item) => {
         if (!item.collected && playerPos.current.distanceTo(item.position) < 2.0) {
           if (world.collectItem(item.id)) {
             sounds.playCollect();
-            setAtpCount((prev) => prev + 1);
-            setScore((prev) => prev + 5);
-            showToast('⚡ +1 Molekul Energi ATP Diperoleh!');
+
+            // Update state and synced ref without causing 3D re-initialization
+            setAtpCount((prev) => {
+              const next = prev + 1;
+              atpCountRef.current = next;
+              return next;
+            });
+            setScore((prev) => {
+              const next = prev + 5;
+              scoreRef.current = next;
+              return next;
+            });
+            showToastRef.current('⚡ +1 Molekul Energi ATP Diperoleh! Navigasi & Soal Stabil');
 
             // Update mini-map collectibles
             setMapCollectibles(
@@ -332,32 +531,40 @@ export default function App() {
             setQuests((prev) =>
               prev.map((q) => (q.id === 'q3' ? { ...q, currentCount: q.currentCount + 1 } : q))
             );
-            recordAchievementProgress('ach_atp_15', 1);
+            recordAchievementProgressRef.current('ach_atp_15', 1);
           }
         }
       });
 
-      // Check proximity to interactive organelles
+      // Check proximity to interactive organelles (Only trigger re-render on actual change)
       let closest: OrganelleInfo | null = null;
       let minDistance = 6.0;
 
-      world.interactiveOrganelles.forEach((org) => {
+      for (let i = 0; i < world.interactiveOrganelles.length; i++) {
+        const org = world.interactiveOrganelles[i];
         const orgPos = new THREE.Vector3(org.location[0], org.location[1], org.location[2]);
         const dist = playerPos.current.distanceTo(orgPos);
         if (dist < minDistance) {
           closest = org;
           minDistance = dist;
         }
-      });
-      setNearbyOrganelle(closest);
+      }
+
+      const closestId = closest ? closest.id : null;
+      const currentNearbyId = nearbyOrganelleRef.current ? nearbyOrganelleRef.current.id : null;
+      if (closestId !== currentNearbyId) {
+        nearbyOrganelleRef.current = closest;
+        setNearbyOrganelle(closest);
+      }
 
       const now = performance.now();
 
-      // Sync mini-map position (throttled ~12 times/sec for smooth non-blocking UI update)
+      // Sync mini-map & directional compass heading (throttled ~12 times/sec for smooth non-blocking UI update)
       if (now - lastMapSync > 80) {
         lastMapSync = now;
         setMapPlayerPos({ x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z });
         setMapPlayerRotY(localAvatar.group.rotation.y);
+        setMapCameraTheta(cameraAngle.current.theta);
       }
 
       // 5. Network Sync (throttle to 15 times/sec)
@@ -375,11 +582,11 @@ export default function App() {
               : hasInput
               ? 'walk'
               : activeEmoteRef.current || 'idle',
-            customization,
-            name: playerName,
-            title: playerTitle,
-            score,
-            collectedAtp: atpCount,
+            customization: customizationRef.current,
+            name: playerNameRef.current,
+            title: playerTitleRef.current,
+            score: scoreRef.current,
+            collectedAtp: atpCountRef.current,
           })
         );
       }
@@ -403,7 +610,7 @@ export default function App() {
       window.removeEventListener('resize', handleResize);
       world.destroy();
     };
-  }, [customization, playerName, playerTitle, score, atpCount, recordAchievementProgress, showToast]);
+  }, []);
 
   // WebSocket Multiplayer Connection
   const connectWebSocket = useCallback((roomToJoin: string) => {
@@ -583,10 +790,31 @@ export default function App() {
     }
   };
 
-  // Teleport to 3D coordinate (from Codex)
-  const handleTeleportTo = (pos: [number, number, number]) => {
-    playerPos.current.set(pos[0], pos[1] + 1.0, pos[2] + 4.0);
-    showToast('🚀 Teleportasi berhasil!');
+  // Teleport to 3D coordinate with Cinematic Warp Portal Transition
+  const handleTeleportTo = (pos: [number, number, number], label: string = 'Organel Sel') => {
+    pendingTeleportPosRef.current = pos;
+    setWarpTargetInfo({
+      title: `Warp Portal: ${label}`,
+      subtitle: 'Melintasi Jalur Sitosol & Mikrotubulus...',
+      color: '#10b981',
+    });
+    setIsWarpTransitionActive(true);
+  };
+
+  const handleWarpMidpoint = () => {
+    if (pendingTeleportPosRef.current) {
+      playerPos.current.set(
+        pendingTeleportPosRef.current[0],
+        pendingTeleportPosRef.current[1] + 1.0,
+        pendingTeleportPosRef.current[2] + 4.0
+      );
+      showToast('🚀 Teleportasi berhasil!');
+      pendingTeleportPosRef.current = null;
+    }
+  };
+
+  const handleWarpComplete = () => {
+    setIsWarpTransitionActive(false);
   };
 
   // Claim Scan Organelle
@@ -677,6 +905,19 @@ export default function App() {
               {remotePlayers.length + 1}
             </span>
           </button>
+
+          {/* Quick Footstep Trail Pill */}
+          <button
+            onClick={() => setActiveModal('trail')}
+            className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-2xl border border-teal-400/40 shadow-lg text-teal-300 hover:text-white transition-colors"
+            title="Ganti Tema & Level Jejak Bioluminesensi Langkah Kaki"
+          >
+            <Footprints className="w-3.5 h-3.5 text-teal-400" />
+            <span className="hidden sm:inline text-xs font-bold capitalize">{customization.trailTheme || 'klorofil'}</span>
+            <span className="text-[10px] bg-teal-500/20 text-teal-300 px-1.5 py-0.2 rounded-full font-mono font-bold">
+              Lvl {customization.trailLevel || 2}
+            </span>
+          </button>
         </div>
 
         {/* Right: Quick Settings & Developer Buttons */}
@@ -708,6 +949,27 @@ export default function App() {
         </div>
       </div>
 
+      {/* Cinematic Warp Transition Overlay for Teleportation / Level Warp */}
+      <LevelTransitionOverlay
+        isActive={isWarpTransitionActive}
+        levelTitle={warpTargetInfo.title}
+        levelSubtitle={warpTargetInfo.subtitle}
+        accentColor={warpTargetInfo.color || '#10b981'}
+        onMidpoint={handleWarpMidpoint}
+        onComplete={handleWarpComplete}
+      />
+
+      {/* 2b. 360-Degree Heading Compass & Directional Indicator (Penunjuk Arah Sesuai Panah) */}
+      <DirectionalIndicator
+        playerPos={mapPlayerPos}
+        cameraTheta={mapCameraTheta}
+        onTeleportTo={(pos) => handleTeleportTo(pos)}
+        onOpenOrganelleScan={(org) => {
+          setActiveOrganelleToScan(org);
+          setActiveModal('scanner');
+        }}
+      />
+
       {/* 3. Real-Time Chat Overlay */}
       <ChatOverlay
         messages={messages}
@@ -718,48 +980,52 @@ export default function App() {
 
       {/* 4. Touch Virtual Joystick & Mobile Buttons */}
       <TouchJoystick
-        onMove={(vec) => {
-          moveVector.current = vec;
-        }}
-        onCameraRotate={(dx, dy) => {
-          cameraAngle.current.theta += dx * 2.5;
-          cameraAngle.current.phi = Math.max(0.1, Math.min(1.2, cameraAngle.current.phi - dy * 2.0));
-        }}
-        onJump={() => {
-          if (isGrounded.current) {
-            playerVelocityY.current = 14;
-            isGrounded.current = false;
-            sounds.playJump();
-          }
-        }}
-        onSprintToggle={(active) => {
-          isSprinting.current = active;
-          setIsSprintingState(active);
-        }}
-        onScan={() => {
-          if (nearbyOrganelle) {
-            setActiveOrganelleToScan(nearbyOrganelle);
-            setActiveModal('scanner');
-          }
-        }}
+        onMove={handleMove}
+        onCameraRotate={handleCameraRotate}
+        onJump={handleJump}
+        onSprintToggle={handleSprintToggle}
+        onScan={handleScan}
         onEmote={handleEmote}
         nearbyOrganelleName={nearbyOrganelle ? nearbyOrganelle.name : null}
         isSprinting={isSprintingState}
       />
 
+      {/* 4b. Status Soal Siap Dijawab Banner (Stabilized Question Prompt) */}
+      {currentTrivia && !isTriviaOpen && (
+        <button
+          onClick={() => {
+            moveVector.current = { x: 0, y: 0 };
+            keysPressed.current.clear();
+            setIsTriviaOpen(true);
+          }}
+          className="pointer-events-auto absolute top-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-gradient-to-r from-amber-500 via-emerald-500 to-teal-500 text-slate-950 px-4 py-2 rounded-full font-black text-xs shadow-2xl border-2 border-white/80 animate-pulse active:scale-95 transition-transform"
+        >
+          <HelpCircle className="w-4 h-4 text-slate-950" />
+          <span>💡 Soal Tantangan Siap Dijawab! (Tekan [Q] / Sentuh di Sini)</span>
+        </button>
+      )}
+
       {/* 5. Toast Notification Banner */}
       {toastMessage && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border-2 border-emerald-400 px-5 py-2.5 rounded-2xl shadow-2xl text-xs sm:text-sm font-bold text-white flex items-center gap-2 animate-bounce">
+        <div className="pointer-events-none absolute top-28 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border-2 border-emerald-400 px-5 py-2.5 rounded-2xl shadow-2xl text-xs sm:text-sm font-bold text-white flex items-center gap-2 animate-bounce">
           <Sparkles className="w-4 h-4 text-amber-400" />
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* 5b. Dedicated Progressive Milestone Toast Notifications (25%, 50%, 75%, 100%) */}
+      <MilestoneToast
+        toasts={milestoneToasts}
+        onDismiss={(id) => setMilestoneToasts((prev) => prev.filter((t) => t.id !== id))}
+        onOpenAchievements={() => setActiveModal('achievements')}
+      />
 
       {/* 6. Collapsible Bottom Control Dock */}
       <ControlDock
         isCollapsed={isDockCollapsed}
         onToggleCollapse={() => setIsDockCollapsed(!isDockCollapsed)}
         onOpenAvatarCustomizer={() => setActiveModal('customizer')}
+        onOpenTrailCustomizer={() => setActiveModal('trail')}
         onOpenMiniGames={() => setActiveModal('mini_games')}
         onOpenCodex={() => setActiveModal('codex')}
         onOpenQuiz={() => setActiveModal('quiz')}
@@ -791,6 +1057,7 @@ export default function App() {
         customization={customization}
         onUpdate={(c) => {
           setCustomization(c);
+          customizationRef.current = c;
           localAvatarRef.current?.updateCustomization(c);
         }}
         playerName={playerName}
@@ -803,6 +1070,27 @@ export default function App() {
           setPlayerTitle(title);
           localAvatarRef.current?.updateNameAndTitle(playerName, title);
         }}
+      />
+
+      {/* Footstep Bioluminescent Trail Modal */}
+      <FootstepTrailModal
+        isOpen={activeModal === 'trail'}
+        onClose={() => setActiveModal(null)}
+        currentTheme={customization.trailTheme || 'chloroplast'}
+        currentLevel={customization.trailLevel || 2}
+        onSelectTheme={(theme) => {
+          const next = { ...customization, trailTheme: theme };
+          setCustomization(next);
+          customizationRef.current = next;
+          showToast(`✨ Tema Jejak Diaktifkan: ${theme.toUpperCase()}`);
+        }}
+        onSelectLevel={(level) => {
+          const next = { ...customization, trailLevel: level };
+          setCustomization(next);
+          customizationRef.current = next;
+          showToast(`⚡ Level Pendaran Jejak Diubah ke Tingkat ${level}`);
+        }}
+        userAtp={atpCount}
       />
 
       {/* Mini-Games Lab Hub */}
@@ -921,13 +1209,28 @@ export default function App() {
       {currentTrivia && (
         <TriviaPopupModal
           isOpen={isTriviaOpen}
-          onClose={() => setIsTriviaOpen(false)}
+          onClose={() => {
+            setIsTriviaOpen(false);
+            moveVector.current = { x: 0, y: 0 };
+            keysPressed.current.clear();
+          }}
           trivia={currentTrivia}
           onAnswerCorrect={(rewardAtp) => {
-            setAtpCount((prev) => prev + rewardAtp);
-            setScore((prev) => prev + rewardAtp * 2);
-            recordAchievementProgress('ach_trivia_5', 1);
-            showToast(`💡 +${rewardAtp} ATP Jawaban Trivia Benar!`);
+            if (currentTrivia) {
+              answeredTriviaIdsRef.current.add(currentTrivia.id);
+            }
+            setAtpCount((prev) => {
+              const next = prev + rewardAtp;
+              atpCountRef.current = next;
+              return next;
+            });
+            setScore((prev) => {
+              const next = prev + rewardAtp * 2;
+              scoreRef.current = next;
+              return next;
+            });
+            recordAchievementProgressRef.current('ach_trivia_5', 1);
+            showToastRef.current(`💡 +${rewardAtp} ATP Jawaban Benar! Soal baru disiapkan.`);
           }}
         />
       )}

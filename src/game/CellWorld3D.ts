@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ORGANELLES } from '../data/biologyData';
 import { OrganelleInfo } from '../types/game';
+import { FootstepTrailSystem } from './FootstepTrailSystem';
 
 export interface CollectibleItem {
   id: string;
@@ -22,6 +23,7 @@ export class CellWorld3D {
   public collectibles: CollectibleItem[] = [];
   public organelleMarkers: Map<string, THREE.Group> = new Map();
   public interactiveOrganelles: OrganelleInfo[] = ORGANELLES;
+  public footstepTrailSystem: FootstepTrailSystem;
 
   private clock: THREE.Clock;
   private animTime: number = 0;
@@ -59,6 +61,16 @@ export class CellWorld3D {
   private chloroplastAuraRing: THREE.Mesh | null = null;
   private chloroplastLight: THREE.PointLight | null = null;
   private particleTextures: THREE.CanvasTexture[] = [];
+
+  // Cytosol Floating Dust & Bioluminescent Glow Atmosphere
+  private cytosolDustParticles: THREE.Points | null = null;
+  private cytosolDustGeo: THREE.BufferGeometry | null = null;
+  private cytosolDustPositions: Float32Array | null = null;
+  private cytosolDustRotAngles: Float32Array | null = null;
+  private cytosolDustRadii: Float32Array | null = null;
+  private cytosolDustDriftSpeed: Float32Array | null = null;
+  private cytosolDustPhases: Float32Array | null = null;
+  private cytosolDustTexture: THREE.CanvasTexture | null = null;
 
   constructor(container: HTMLDivElement) {
     // 1. Detect software WebGL as instructed by skill
@@ -137,6 +149,7 @@ export class CellWorld3D {
     this.buildOrganelles();
     this.buildMicrotubuleBridges();
     this.spawnCollectibles();
+    this.footstepTrailSystem = new FootstepTrailSystem(this.scene, this.isSoftwareGl);
   }
 
   private buildCytoplasmFloor() {
@@ -186,24 +199,89 @@ export class CellWorld3D {
     floorMesh.receiveShadow = true;
     this.scene.add(floorMesh);
 
-    // Subtle bioluminescent ambient particles
-    const particleGeo = new THREE.BufferGeometry();
-    const particleCount = 200;
-    const posArr = new Float32Array(particleCount * 3);
-    for (let i = 0; i < particleCount; i++) {
-      posArr[i * 3] = (Math.random() - 0.5) * 80;
-      posArr[i * 3 + 1] = Math.random() * 15 + 0.5;
-      posArr[i * 3 + 2] = (Math.random() - 0.5) * 80;
+    // Build the dynamic glowing cytosol dust mote atmosphere
+    this.buildCytosolAtmosphere();
+  }
+
+  private buildCytosolAtmosphere() {
+    // 1. Procedural Glowing Mote Texture (Luminous Bioluminescent Cytosol Dust)
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+
+    // Concentric radial gradient for soft luminous mote with incandescent core
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.18, 'rgba(217, 249, 157, 0.95)'); // Bright warm lime core
+    grad.addColorStop(0.45, 'rgba(110, 231, 183, 0.65)'); // Emerald bioluminescence
+    grad.addColorStop(0.75, 'rgba(56, 189, 248, 0.25)'); // Oceanic cytosol cyan halo
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)'); // Gentle transparent dissipation
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+
+    this.cytosolDustTexture = new THREE.CanvasTexture(canvas);
+    this.cytosolDustTexture.colorSpace = THREE.SRGBColorSpace;
+    this.particleTextures.push(this.cytosolDustTexture);
+
+    // 2. Geometry & Attributes (480 particles for rich presence, 240 for software GL)
+    const dustCount = this.isSoftwareGl ? 240 : 480;
+    this.cytosolDustGeo = new THREE.BufferGeometry();
+    this.cytosolDustPositions = new Float32Array(dustCount * 3);
+    this.cytosolDustRotAngles = new Float32Array(dustCount);
+    this.cytosolDustRadii = new Float32Array(dustCount);
+    this.cytosolDustDriftSpeed = new Float32Array(dustCount);
+    this.cytosolDustPhases = new Float32Array(dustCount);
+
+    const colors = new Float32Array(dustCount * 3);
+    const colorPalette = [
+      new THREE.Color(0x6ee7b7), // Emerald Mint Bioluminescence
+      new THREE.Color(0x38bdf8), // Cytosol Cyan Glow
+      new THREE.Color(0xfef08a), // Golden Glucose Dust Mote
+      new THREE.Color(0xa7f3d0), // Soft Thylakoid Green
+      new THREE.Color(0x67e8f9), // Bright Electric Cytoplasmic Ion
+    ];
+
+    for (let i = 0; i < dustCount; i++) {
+      // Distribute particles across the 3D plant cell interior
+      const radius = 3.0 + Math.sqrt(Math.random()) * 38.0;
+      const angle = Math.random() * Math.PI * 2;
+      const height = 0.6 + Math.random() * 13.5;
+
+      this.cytosolDustRadii[i] = radius;
+      this.cytosolDustRotAngles[i] = angle;
+      this.cytosolDustPositions[i * 3] = Math.cos(angle) * radius;
+      this.cytosolDustPositions[i * 3 + 1] = height;
+      this.cytosolDustPositions[i * 3 + 2] = Math.sin(angle) * radius;
+
+      // Cytoplasmic streaming (cyclosis): slow circulation around cell interior
+      const baseDirection = Math.random() > 0.2 ? 1 : -1;
+      this.cytosolDustDriftSpeed[i] = baseDirection * (0.04 + Math.random() * 0.09);
+      this.cytosolDustPhases[i] = Math.random() * Math.PI * 2;
+
+      // Assign organic palette colors
+      const pickedColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+      colors[i * 3] = pickedColor.r;
+      colors[i * 3 + 1] = pickedColor.g;
+      colors[i * 3 + 2] = pickedColor.b;
     }
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-    const particleMat = new THREE.PointsMaterial({
-      color: 0x6ee7b7,
-      size: 0.35,
+
+    this.cytosolDustGeo.setAttribute('position', new THREE.BufferAttribute(this.cytosolDustPositions, 3));
+    this.cytosolDustGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // 3. Points Material with additive blending for ethereal glow
+    const dustMat = new THREE.PointsMaterial({
+      size: this.isSoftwareGl ? 0.7 : 0.95,
+      map: this.cytosolDustTexture,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      vertexColors: true,
     });
-    const particles = new THREE.Points(particleGeo, particleMat);
-    this.scene.add(particles);
+
+    this.cytosolDustParticles = new THREE.Points(this.cytosolDustGeo, dustMat);
+    this.scene.add(this.cytosolDustParticles);
   }
 
   private buildCellWallAndMembrane() {
@@ -870,6 +948,45 @@ export class CellWorld3D {
         this.photosynthesisParticleGroup.visible = false;
       }
     }
+
+    // Animate Cytosol Dust & Bioluminescent Floating Motes (Cyclosis streaming & buoyant drift)
+    if (
+      this.cytosolDustGeo &&
+      this.cytosolDustPositions &&
+      this.cytosolDustRotAngles &&
+      this.cytosolDustRadii &&
+      this.cytosolDustDriftSpeed &&
+      this.cytosolDustPhases
+    ) {
+      const count = this.cytosolDustPhases.length;
+      for (let i = 0; i < count; i++) {
+        const idx = i * 3;
+        this.cytosolDustPhases[i] += delta * 1.6;
+
+        // Cytoplasmic cyclosis: gentle angular circulation around cell center
+        this.cytosolDustRotAngles[i] += this.cytosolDustDriftSpeed[i] * delta * 0.45;
+        const a = this.cytosolDustRotAngles[i];
+        const r = this.cytosolDustRadii[i];
+
+        // Horizontal position with subtle sinusoidal breathing
+        this.cytosolDustPositions[idx] = Math.cos(a) * r;
+        this.cytosolDustPositions[idx + 2] = Math.sin(a) * r;
+
+        // Vertical floating drift (simulating microscopic protoplasmic buoyancy)
+        this.cytosolDustPositions[idx + 1] += Math.sin(this.cytosolDustPhases[i]) * delta * 0.35;
+
+        // Loop smoothly between cytosol floor and ceiling
+        if (this.cytosolDustPositions[idx + 1] > 14.5) {
+          this.cytosolDustPositions[idx + 1] = 0.8;
+        } else if (this.cytosolDustPositions[idx + 1] < 0.5) {
+          this.cytosolDustPositions[idx + 1] = 14.2;
+        }
+      }
+      this.cytosolDustGeo.attributes.position.needsUpdate = true;
+    }
+
+    // Animate Footstep & Bioluminescent Trail Particles
+    this.footstepTrailSystem.update(delta);
   }
 
   public setPhotosynthesisActive(active: boolean) {
@@ -1122,9 +1239,12 @@ export class CellWorld3D {
 
   public destroy() {
     this.particleTextures.forEach((t) => t.dispose());
+    this.cytosolDustTexture?.dispose();
+    this.cytosolDustGeo?.dispose();
     this.photonGeo?.dispose();
     this.oxygenGeo?.dispose();
     this.glucoseGeo?.dispose();
+    this.footstepTrailSystem.destroy();
     this.renderer.dispose();
   }
 }
