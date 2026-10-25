@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Sparkles, Dna, Compass, Zap } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Sparkles, Dna, Zap } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 
 interface LevelTransitionOverlayProps {
@@ -16,15 +16,21 @@ interface LevelTransitionOverlayProps {
 export const LevelTransitionOverlay: React.FC<LevelTransitionOverlayProps> = ({
   isActive,
   levelTitle = 'Memasuki Tingkatan Baru',
-  levelSubtitle = 'Menginisialisasi Bank Soal Kurikulum Merdeka...',
+  levelSubtitle = 'Melintasi Lingkungan Seluler 3D...',
   badge = 'Portal Dimensi Seluler',
   accentColor = '#10b981',
   onMidpoint,
   onComplete,
-  durationMs = 950,
+  durationMs = 750,
 }) => {
-  // Phase: 'idle' | 'warping' | 'dark_midpoint' | 'fade_in' | 'done'
+  // Phase: 'idle' | 'warping' | 'dark_midpoint' | 'fade_in'
   const [phase, setPhase] = useState<'idle' | 'warping' | 'dark_midpoint' | 'fade_in'>('idle');
+
+  // Keep latest callbacks in refs so re-renders of the parent DO NOT cancel or restart timers!
+  const onMidpointRef = useRef(onMidpoint);
+  onMidpointRef.current = onMidpoint;
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     if (!isActive) {
@@ -32,157 +38,150 @@ export const LevelTransitionOverlay: React.FC<LevelTransitionOverlayProps> = ({
       return;
     }
 
-    sounds.playWarp();
+    try {
+      sounds.playWarp();
+    } catch {}
+
     setPhase('warping');
 
-    // 1. Warping speed-lines & vignette closing in (~380ms)
+    // Step 1: Warp close-in (240ms)
     const midTimer = setTimeout(() => {
       setPhase('dark_midpoint');
-      if (onMidpoint) onMidpoint();
+      if (onMidpointRef.current) {
+        try {
+          onMidpointRef.current();
+        } catch (err) {
+          console.warn('Warp midpoint error:', err);
+        }
+      }
 
-      // 2. Hold dark for instant smooth state swap (~240ms)
+      // Step 2: Instant smooth reveal (160ms)
       const fadeTimer = setTimeout(() => {
         setPhase('fade_in');
 
-        // 3. Smooth reveal back to clear (~330ms)
+        // Step 3: Complete & clean dismiss (220ms)
         const completeTimer = setTimeout(() => {
           setPhase('idle');
-          if (onComplete) onComplete();
-        }, 330);
+          if (onCompleteRef.current) {
+            try {
+              onCompleteRef.current();
+            } catch (err) {
+              console.warn('Warp complete error:', err);
+            }
+          }
+        }, 220);
 
         return () => clearTimeout(completeTimer);
-      }, 240);
+      }, 160);
 
       return () => clearTimeout(fadeTimer);
-    }, 380);
+    }, 240);
 
-    return () => clearTimeout(midTimer);
-  }, [isActive, onMidpoint, onComplete, durationMs]);
+    // Absolute fail-safe: guaranteed force dismiss after 950ms so screen CAN NEVER get stuck
+    const safetyTimer = setTimeout(() => {
+      setPhase('idle');
+      if (onCompleteRef.current) {
+        onCompleteRef.current();
+      }
+    }, 950);
+
+    return () => {
+      clearTimeout(midTimer);
+      clearTimeout(safetyTimer);
+    };
+  }, [isActive]);
 
   if (!isActive && phase === 'idle') return null;
 
   return (
     <div
-      className={`fixed inset-0 z-[100] pointer-events-auto flex items-center justify-center overflow-hidden transition-all select-none ${
+      onClick={() => {
+        // Immediate escape hatch if user clicks
+        setPhase('idle');
+        onCompleteRef.current?.();
+      }}
+      className={`fixed inset-0 z-[100] flex items-center justify-center overflow-hidden select-none transition-all cursor-pointer ${
         phase === 'dark_midpoint'
-          ? 'bg-black opacity-100 backdrop-blur-2xl'
+          ? 'bg-black opacity-100 backdrop-blur-2xl pointer-events-auto'
           : phase === 'warping'
-          ? 'bg-black/95 opacity-95 backdrop-blur-xl'
+          ? 'bg-black/90 opacity-90 backdrop-blur-md pointer-events-auto'
           : phase === 'fade_in'
-          ? 'bg-black/40 opacity-40 backdrop-blur-sm'
+          ? 'bg-black/20 opacity-20 backdrop-blur-none pointer-events-none'
           : 'opacity-0 pointer-events-none'
       }`}
       style={{
-        transitionDuration: phase === 'fade_in' ? '320ms' : '280ms',
+        transitionDuration: phase === 'fade_in' ? '200ms' : '180ms',
       }}
     >
       {/* Dynamic Cytological Warp Tunnel & Radial Streaks */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {/* Hyperspace Radial Speed Rays */}
+        {/* Radial Gradient */}
         <div
-          className={`absolute inset-[-50%] w-[200%] h-[200%] origin-center transition-transform duration-700 ${
-            phase === 'warping' ? 'scale-150 rotate-45' : 'scale-100 rotate-0'
+          className={`absolute inset-[-40%] w-[180%] h-[180%] origin-center transition-transform duration-500 ${
+            phase === 'warping' ? 'scale-125 rotate-30' : 'scale-100 rotate-0'
           }`}
           style={{
-            background: `radial-gradient(circle at center, transparent 15%, rgba(16, 185, 129, 0.15) 45%, rgba(6, 78, 59, 0.5) 75%, #000000 100%)`,
+            background: `radial-gradient(circle at center, transparent 20%, rgba(16, 185, 129, 0.2) 50%, rgba(6, 78, 59, 0.6) 80%, #000000 100%)`,
           }}
         />
 
-        {/* Warp Stream Particle Lines */}
+        {/* Warp Stream SVG Rings */}
         <svg className="absolute inset-0 w-full h-full opacity-60">
-          <defs>
-            <radialGradient id="warpGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={accentColor} stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {/* Circular Shockwave Rings */}
           <circle
             cx="50%"
             cy="50%"
-            r="120"
+            r="100"
             fill="none"
             stroke={accentColor}
             strokeWidth="3"
-            className="animate-ping opacity-30"
+            className="animate-ping opacity-40"
           />
           <circle
             cx="50%"
             cy="50%"
-            r="240"
+            r="200"
             fill="none"
             stroke="#38bdf8"
             strokeWidth="1.5"
             className="animate-pulse opacity-40"
           />
-
-          {/* Radial cytological rays */}
-          {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
-            <line
-              key={deg}
-              x1="50%"
-              y1="50%"
-              x2={`${50 + 60 * Math.cos((deg * Math.PI) / 180)}%`}
-              y2={`${50 + 60 * Math.sin((deg * Math.PI) / 180)}%`}
-              stroke={accentColor}
-              strokeWidth="2"
-              strokeDasharray="8,12"
-              opacity="0.35"
-              className="animate-pulse"
-            />
-          ))}
         </svg>
       </div>
 
       {/* Center Cinematic Warp Badge */}
       <div
-        className={`relative z-10 flex flex-col items-center text-center p-6 max-w-md mx-4 transition-all duration-300 transform ${
-          phase === 'warping'
-            ? 'scale-110 opacity-100 translate-y-0'
-            : phase === 'dark_midpoint'
+        className={`relative z-10 flex flex-col items-center text-center p-6 max-w-sm mx-4 transition-all duration-200 transform ${
+          phase === 'warping' || phase === 'dark_midpoint'
             ? 'scale-100 opacity-100 translate-y-0'
-            : 'scale-90 opacity-0 translate-y-4'
+            : 'scale-90 opacity-0 translate-y-3'
         }`}
       >
         {/* Glowing Portal Orb Icon */}
         <div
-          className="relative w-20 h-20 rounded-3xl flex items-center justify-center shadow-2xl mb-4 border-2 border-white/60 animate-bounce"
+          className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl mb-3 border-2 border-white/60 bg-emerald-500/20"
           style={{
-            backgroundColor: `${accentColor}33`,
-            boxShadow: `0 0 50px ${accentColor}88, inset 0 0 20px ${accentColor}66`,
+            boxShadow: `0 0 40px ${accentColor}88`,
           }}
         >
-          <Dna className="w-10 h-10 text-white animate-spin" style={{ animationDuration: '4s' }} />
-          <div className="absolute inset-0 rounded-3xl border border-white/30 animate-pulse" />
+          <Dna className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
         </div>
 
         {/* Level Badge Pill */}
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-black text-emerald-300 uppercase tracking-widest mb-2 shadow-lg">
-          <Zap className="w-3.5 h-3.5 fill-current text-amber-400" />
+        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-[10px] font-black text-emerald-300 uppercase tracking-widest mb-1.5 shadow-md">
+          <Zap className="w-3 h-3 fill-current text-amber-400" />
           <span>{badge}</span>
         </div>
 
         {/* Level Title */}
-        <h3 className="text-2xl sm:text-3xl font-black text-white tracking-wide drop-shadow-md">
+        <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide drop-shadow">
           {levelTitle}
         </h3>
 
-        {/* Level Subtitle */}
-        <p className="text-xs sm:text-sm text-slate-300 mt-2 font-medium flex items-center gap-1.5 drop-shadow">
-          <Sparkles className="w-4 h-4 text-emerald-400 animate-spin" style={{ animationDuration: '3s' }} />
+        {/* Subtitle */}
+        <p className="text-xs text-slate-300 mt-1 font-medium flex items-center gap-1 drop-shadow">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
           <span>{levelSubtitle}</span>
         </p>
-
-        {/* Warping Progress Line */}
-        <div className="w-48 h-1.5 bg-white/20 rounded-full mt-4 overflow-hidden shadow-inner">
-          <div
-            className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 rounded-full animate-pulse transition-all duration-500"
-            style={{
-              width: phase === 'warping' ? '65%' : phase === 'dark_midpoint' ? '100%' : '15%',
-            }}
-          />
-        </div>
       </div>
     </div>
   );

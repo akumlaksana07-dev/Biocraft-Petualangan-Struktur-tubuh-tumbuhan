@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck, Footprints } from 'lucide-react';
+import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck, Footprints, GraduationCap } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 
 interface ControlDockProps {
@@ -14,6 +14,8 @@ interface ControlDockProps {
   onOpenQuests: () => void;
   onOpenMultiplayer: () => void;
   onOpenDeveloperProfile: () => void;
+  onOpenLeaderboard: () => void;
+  onOpenLoginProfile: () => void;
 }
 
 export const ControlDock: React.FC<ControlDockProps> = ({
@@ -28,6 +30,8 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onOpenQuests,
   onOpenMultiplayer,
   onOpenDeveloperProfile,
+  onOpenLeaderboard,
+  onOpenLoginProfile,
 }) => {
   return (
     <div
@@ -124,7 +128,20 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Kuis IPA</span>
         </button>
 
-        {/* 5. Achievements */}
+        {/* 5. Papan Peringkat Top 20 */}
+        <button
+          onClick={() => {
+            sounds.playScan();
+            onOpenLeaderboard();
+          }}
+          className="flex flex-col items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-2xl bg-gradient-to-t from-amber-950/80 to-amber-900/40 hover:from-amber-900 hover:to-amber-800/60 active:scale-95 transition-all text-amber-300 hover:text-white border border-amber-400/50 min-w-[62px] sm:min-w-[74px] shadow-sm"
+          title="Papan Peringkat Top 20 Siswa Terakumulasi"
+        >
+          <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 mb-0.5" />
+          <span className="text-[9px] sm:text-[10px] font-black tracking-tight text-amber-200">Top 20</span>
+        </button>
+
+        {/* 5b. Achievements */}
         <button
           onClick={() => {
             sounds.playScan();
@@ -133,7 +150,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           className="flex flex-col items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-2xl bg-white/5 hover:bg-amber-600/30 active:scale-95 transition-all text-slate-200 hover:text-white border border-transparent hover:border-amber-400/50 min-w-[58px] sm:min-w-[68px]"
           title="Piala & Prestasi Siswa"
         >
-          <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 mb-0.5" />
+          <Award className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 mb-0.5" />
           <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Prestasi</span>
         </button>
 
@@ -163,7 +180,20 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Kelas</span>
         </button>
 
-        {/* 8. Profil Pengembang */}
+        {/* 8. Panduan & Data Siswa */}
+        <button
+          onClick={() => {
+            sounds.playScan();
+            onOpenLoginProfile();
+          }}
+          className="flex flex-col items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-2xl bg-white/5 hover:bg-emerald-600/30 active:scale-95 transition-all text-slate-200 hover:text-white border border-transparent hover:border-emerald-400/50 min-w-[58px] sm:min-w-[68px]"
+          title="Data Siswa, Panduan Bermain & Tujuan Pembelajaran"
+        >
+          <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 mb-0.5" />
+          <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Panduan</span>
+        </button>
+
+        {/* 9. Profil Pengembang */}
         <button
           onClick={() => {
             sounds.playScan();

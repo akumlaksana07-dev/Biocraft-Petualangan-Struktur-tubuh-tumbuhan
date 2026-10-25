@@ -16,6 +16,7 @@ import {
   Zap,
   RefreshCw,
   BookOpen,
+  Trophy,
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 import { LevelTransitionOverlay } from './LevelTransitionOverlay';
@@ -25,14 +26,18 @@ interface QuizModalProps {
   isOpen: boolean;
   onClose: () => void;
   playerName: string;
+  playerSchool?: string;
   onQuizComplete: (score: number, levelId: number, atpReward: number) => void;
+  onOpenLeaderboard?: () => void;
 }
 
 export const QuizModal: React.FC<QuizModalProps> = ({
   isOpen,
   onClose,
   playerName,
+  playerSchool = 'SMP Indonesia',
   onQuizComplete,
+  onOpenLeaderboard,
 }) => {
   // Current view: 'level_select' | 'in_quiz' | 'result'
   const [viewState, setViewState] = useState<'level_select' | 'in_quiz' | 'result'>('level_select');
@@ -521,6 +526,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                 <div className="text-xs text-slate-300 space-y-1">
                   <p>Diberikan dengan bangga kepada:</p>
                   <p className="text-lg font-black text-amber-300">{playerName || 'Siswa Berprestasi'}</p>
+                  <p className="text-xs text-slate-300 font-bold">Asal Sekolah: {playerSchool || 'SMP Indonesia'}</p>
                   <p className="text-xs text-slate-400">Mata Pelajaran: Ilmu Pengetahuan Alam (IPA) Kelas VIII SMP</p>
                   <p className="text-xs text-slate-400">Materi: {selectedLevel.subtitle}</p>
                 </div>
@@ -530,6 +536,21 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                   <span>Tanggal: {new Date().toLocaleDateString('id-ID')}</span>
                 </div>
               </div>
+            )}
+
+            {/* Quick Leaderboard Navigation Button */}
+            {onOpenLeaderboard && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenLeaderboard();
+                }}
+                className="w-full py-3 bg-gradient-to-r from-amber-500/20 via-slate-800 to-emerald-500/20 hover:from-amber-500/30 hover:to-emerald-500/30 border border-amber-400/50 rounded-2xl text-xs font-black text-amber-300 flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-lg"
+              >
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>Lihat Peringkat & Skor Kamu di Papan Peringkat Top 20</span>
+                <ChevronRight className="w-4 h-4 text-amber-400" />
+              </button>
             )}
           </div>
         )}

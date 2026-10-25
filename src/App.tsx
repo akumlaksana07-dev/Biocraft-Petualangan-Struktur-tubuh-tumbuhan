@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { CellWorld3D } from './game/CellWorld3D';
 import { Avatar3D } from './game/Avatar3D';
-import { Customization, PlayerData, ChatMessage, Quest, OrganelleInfo } from './types/game';
+import { Customization, PlayerData, ChatMessage, Quest, OrganelleInfo, StudentProfile } from './types/game';
 import { INITIAL_QUESTS } from './data/biologyData';
 import { INITIAL_ACHIEVEMENTS, Achievement } from './data/achievementsData';
 import { TouchJoystick } from './components/TouchJoystick';
@@ -28,8 +28,10 @@ import { MiniMap } from './components/MiniMap';
 import { MilestoneToast, MilestoneToastData } from './components/MilestoneToast';
 import { DirectionalIndicator } from './components/DirectionalIndicator';
 import { LevelTransitionOverlay } from './components/LevelTransitionOverlay';
+import { LoginOnboardingModal } from './components/LoginOnboardingModal';
+import { LeaderboardModal } from './components/LeaderboardModal';
 import { sounds } from './utils/soundEffects';
-import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck, Footprints, Compass } from 'lucide-react';
+import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck, Footprints, Compass, Trophy, GraduationCap, School } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 const DEFAULT_CUSTOMIZATION: Customization = {
@@ -50,10 +52,47 @@ export default function App() {
   const remoteAvatarsRef = useRef<Map<string, Avatar3D>>(new Map());
   const socketRef = useRef<WebSocket | null>(null);
 
-  // Player state
+  // Player state & Student Profile (Nama, Asal Sekolah, Kelas, Gelar)
   const [selfId, setSelfId] = useState<string>(() => `p_${Math.random().toString(36).substring(2, 7)}`);
-  const [playerName, setPlayerName] = useState<string>('Siswa IPA VIII');
-  const [playerTitle, setPlayerTitle] = useState<string>('Penjelajah Sel Muda');
+  
+  const [studentProfile, setStudentProfile] = useState<StudentProfile>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_student_profile');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      name: '',
+      school: '',
+      grade: 'Kelas VIII-A',
+      title: 'Penjelajah Sel Muda',
+    };
+  });
+
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_student_profile');
+      return !saved || !JSON.parse(saved).name;
+    } catch {
+      return true;
+    }
+  });
+
+  const [playerName, setPlayerName] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_student_profile');
+      if (saved && JSON.parse(saved).name) return JSON.parse(saved).name;
+    } catch {}
+    return 'Siswa IPA VIII';
+  });
+
+  const [playerTitle, setPlayerTitle] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_student_profile');
+      if (saved && JSON.parse(saved).title) return JSON.parse(saved).title;
+    } catch {}
+    return 'Penjelajah Sel Muda';
+  });
+
   const [customization, setCustomization] = useState<Customization>(DEFAULT_CUSTOMIZATION);
   const [currentRoom, setCurrentRoom] = useState<string>('KELAS-8A');
   const [atpCount, setAtpCount] = useState<number>(15);
@@ -88,7 +127,19 @@ export default function App() {
   // Modals & Navigation
   const [isDockCollapsed, setIsDockCollapsed] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'customizer' | 'trail' | 'mini_games' | 'scanner' | 'quiz' | 'codex' | 'achievements' | 'quests' | 'lobby' | 'developer' | null
+    | 'customizer'
+    | 'trail'
+    | 'mini_games'
+    | 'scanner'
+    | 'quiz'
+    | 'codex'
+    | 'achievements'
+    | 'quests'
+    | 'lobby'
+    | 'developer'
+    | 'leaderboard'
+    | 'login_profile'
+    | null
   >(null);
   const [activeOrganelleToScan, setActiveOrganelleToScan] = useState<OrganelleInfo | null>(null);
   const [nearbyOrganelle, setNearbyOrganelle] = useState<OrganelleInfo | null>(null);
@@ -247,6 +298,66 @@ export default function App() {
   useEffect(() => {
     localAvatarRef.current?.updateNameAndTitle(playerName, playerTitle);
   }, [playerName, playerTitle]);
+
+  // Sync score and completion to Leaderboard API
+  const syncScoreToLeaderboard = useCallback(
+    async (
+      currentScore: number,
+      currentAtp: number,
+      completedLevels: number = 1,
+      overrideProfile?: StudentProfile
+    ) => {
+      const prof = overrideProfile || studentProfile;
+      if (!prof.name) return;
+      try {
+        await fetch('/api/leaderboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: selfId,
+            name: prof.name,
+            school: prof.school || 'SMP Indonesia',
+            score: currentScore,
+            atp: currentAtp,
+            completedLevels,
+            badge: prof.title,
+          }),
+        });
+      } catch (err) {
+        console.warn('Leaderboard sync error:', err);
+      }
+    },
+    [selfId, studentProfile]
+  );
+
+  // Save student profile handler from login/onboarding modal
+  const handleSaveStudentProfile = (profile: StudentProfile) => {
+    setStudentProfile(profile);
+    setPlayerName(profile.name);
+    setPlayerTitle(profile.title);
+    playerNameRef.current = profile.name;
+    playerTitleRef.current = profile.title;
+    try {
+      localStorage.setItem('biocraft_student_profile', JSON.stringify(profile));
+    } catch {}
+    localAvatarRef.current?.updateNameAndTitle(profile.name, profile.title);
+    showToast(`🎓 Selamat Datang, ${profile.name} (${profile.school})!`);
+
+    // Broadcast update via WebSocket
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: 'update',
+          name: profile.name,
+          title: profile.title,
+          grade: profile.grade,
+        })
+      );
+    }
+
+    // Immediately sync to leaderboard
+    syncScoreToLeaderboard(score, atpCount, 1, profile);
+  };
 
   // Stabilized keyboard keys tracking set
   const keysPressed = useRef<Set<string>>(new Set());
@@ -864,27 +975,52 @@ export default function App() {
 
       {/* 2. Top HUD Bar (Roblox-style minimal status) */}
       <div className="absolute top-3 inset-x-3 sm:inset-x-6 z-20 pointer-events-none flex items-center justify-between">
-        {/* Left: Player Profile Pill */}
-        <div className="pointer-events-auto flex items-center gap-2.5 bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-white/20 shadow-lg">
+        {/* Left: Player Profile Pill (Clickable to open profile & guide) */}
+        <div
+          onClick={() => {
+            sounds.playScan();
+            setActiveModal('login_profile');
+          }}
+          className="pointer-events-auto flex items-center gap-2.5 bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-white/20 shadow-lg cursor-pointer hover:border-emerald-400/60 active:scale-95 transition-all"
+          title="Klik untuk melihat Data Siswa, Panduan Bermain & Tujuan Pembelajaran"
+        >
           <div
             className="w-9 h-9 rounded-xl border border-white/30 flex items-center justify-center font-black text-white text-sm shadow-inner"
             style={{ backgroundColor: customization.shirtColor }}
           >
-            {playerName.charAt(0).toUpperCase()}
+            {playerName ? playerName.charAt(0).toUpperCase() : 'S'}
           </div>
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-bold text-white leading-tight">{playerName}</span>
               <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-400/30">
-                SMP VIII
+                {studentProfile.grade || 'SMP VIII'}
               </span>
             </div>
-            <div className="text-[10px] text-emerald-300 font-medium leading-tight">{playerTitle}</div>
+            <div className="text-[10px] text-emerald-300 font-medium leading-tight truncate max-w-[120px] sm:max-w-[170px]">
+              {studentProfile.school || playerTitle}
+            </div>
           </div>
         </div>
 
-        {/* Center: Real-time ATP & Shared Class Indicator */}
+        {/* Center: Real-time ATP, Leaderboard Top 20, & Shared Class Indicator */}
         <div className="pointer-events-auto flex items-center gap-2">
+          {/* Top 20 Leaderboard Pill */}
+          <button
+            onClick={() => {
+              sounds.playScan();
+              setActiveModal('leaderboard');
+            }}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 via-slate-900/90 to-amber-950/40 hover:from-amber-500/30 hover:to-slate-900 border border-amber-400/60 px-3 py-1.5 rounded-2xl shadow-lg text-amber-300 hover:text-white transition-all active:scale-95"
+            title="Buka Papan Peringkat Akumulasi Top 20 Siswa"
+          >
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-black text-amber-300 hidden sm:inline">Papan Peringkat</span>
+            <span className="text-[10px] font-mono font-bold bg-amber-400/20 text-amber-200 px-1.5 py-0.2 rounded-full border border-amber-400/30">
+              {score} Pts
+            </span>
+          </button>
+
           {/* Personal ATP */}
           <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-amber-400/40 shadow-lg">
             <span className="text-sm">⚡</span>
@@ -1033,6 +1169,8 @@ export default function App() {
         onOpenQuests={() => setActiveModal('quests')}
         onOpenMultiplayer={() => setActiveModal('lobby')}
         onOpenDeveloperProfile={() => setActiveModal('developer')}
+        onOpenLeaderboard={() => setActiveModal('leaderboard')}
+        onOpenLoginProfile={() => setActiveModal('login_profile')}
       />
 
       {/* 7. Real-Time Interactive Mini-Map (Pojok Kanan Bawah) */}
@@ -1098,8 +1236,17 @@ export default function App() {
         isOpen={activeModal === 'mini_games'}
         onClose={() => setActiveModal(null)}
         onRewardAtp={(amt, reason) => {
-          setAtpCount((prev) => prev + amt);
-          setScore((prev) => prev + amt * 2);
+          setAtpCount((prev) => {
+            const nextAtp = prev + amt;
+            atpCountRef.current = nextAtp;
+            return nextAtp;
+          });
+          setScore((prev) => {
+            const nextScore = prev + amt * 2;
+            scoreRef.current = nextScore;
+            syncScoreToLeaderboard(nextScore, atpCount + amt, 1);
+            return nextScore;
+          });
           showToast(`🎉 +${amt} ATP: ${reason}`);
           if (reason.includes('Bangun Sel')) {
             recordAchievementProgress('ach_build_cell', 1);
@@ -1132,9 +1279,20 @@ export default function App() {
         isOpen={activeModal === 'quiz'}
         onClose={() => setActiveModal(null)}
         playerName={playerName}
+        playerSchool={studentProfile.school}
+        onOpenLeaderboard={() => setActiveModal('leaderboard')}
         onQuizComplete={(finalScore, levelId, atpReward) => {
-          setScore((s) => s + finalScore);
-          setAtpCount((a) => a + atpReward);
+          setScore((s) => {
+            const nextScore = s + finalScore;
+            scoreRef.current = nextScore;
+            syncScoreToLeaderboard(nextScore, atpCount + atpReward, levelId);
+            return nextScore;
+          });
+          setAtpCount((a) => {
+            const nextAtp = a + atpReward;
+            atpCountRef.current = nextAtp;
+            return nextAtp;
+          });
           showToast(`🏆 Level ${levelId} Selesai! Skor: ${finalScore}% (+${atpReward} ATP)`);
 
           if (finalScore >= 80) {

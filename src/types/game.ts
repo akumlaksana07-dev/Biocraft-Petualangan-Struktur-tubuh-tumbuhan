@@ -81,3 +81,26 @@ export interface ChatMessage {
   text: string;
   time: string;
 }
+
+export interface StudentProfile {
+  name: string;
+  school: string;
+  grade: string;
+  title: string;
+  avatarColor?: string;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  rank?: number;
+  name: string;
+  school: string;
+  score: number;
+  atp: number;
+  completedLevels: number;
+  badge: string;
+  predicate: string;
+  completedAt: string;
+  isCurrentPlayer?: boolean;
+}
+
