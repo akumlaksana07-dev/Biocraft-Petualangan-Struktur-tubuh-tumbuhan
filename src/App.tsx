@@ -196,6 +196,37 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
 
+  // Guide Mode (Mode Bantu): Thin floor laser beam pointing to the nearest organelle
+  const [isGuideModeActive, setIsGuideModeActive] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_guide_mode');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+  const isGuideModeActiveRef = useRef(isGuideModeActive);
+  useEffect(() => {
+    isGuideModeActiveRef.current = isGuideModeActive;
+  }, [isGuideModeActive]);
+
+  const handleToggleGuideMode = useCallback(() => {
+    setIsGuideModeActive((prev) => {
+      const next = !prev;
+      isGuideModeActiveRef.current = next;
+      try {
+        localStorage.setItem('biocraft_guide_mode', String(next));
+      } catch {}
+      if (next) {
+        sounds.playCollect();
+        showToast('💡 Mode Bantu AKTIF: Sinar laser tipis di lantai memandu ke organel terdekat!');
+      } else {
+        sounds.playScan();
+        showToast('Mode Bantu Dinonaktifkan.');
+      }
+      return next;
+    });
+  }, [showToast]);
+
   // Update Achievement Progress Helper with Gradual Milestone Recognition (25%, 50%, 75%, 100%)
   const recordAchievementProgress = useCallback(
     (achId: string, delta: number = 1) => {
@@ -320,7 +351,7 @@ export default function App() {
     localAvatarRef.current?.updateNameAndTitle(playerName, playerTitle);
   }, [playerName, playerTitle]);
 
-  // Sync score and completion to Leaderboard API
+  // Sync score and completion to Leaderboard API (Strictly only students who have actually played)
   const syncScoreToLeaderboard = useCallback(
     async (
       currentScore: number,
@@ -329,7 +360,8 @@ export default function App() {
       overrideProfile?: StudentProfile
     ) => {
       const prof = overrideProfile || studentProfile;
-      if (!prof.name) return;
+      // Strictly do not post to leaderboard if user has no score or hasn't played yet
+      if (!prof.name || currentScore <= 0 || completedLevels < 1) return;
       try {
         await fetch('/api/leaderboard', {
           method: 'POST',
@@ -376,8 +408,10 @@ export default function App() {
       );
     }
 
-    // Immediately sync to leaderboard
-    syncScoreToLeaderboard(score, atpCount, 1, profile);
+    // Only sync to leaderboard if the player has actually played and achieved a score > 0
+    if (score > 0) {
+      syncScoreToLeaderboard(score, atpCount, 1, profile);
+    }
   };
 
   // Stabilized keyboard keys tracking set
@@ -428,6 +462,10 @@ export default function App() {
 
       if (e.code === 'KeyH') {
         setIsDockCollapsed((prev) => !prev);
+      }
+
+      if (e.code === 'KeyB') {
+        handleToggleGuideMode();
       }
 
       if (e.code === 'KeyQ') {
@@ -627,8 +665,8 @@ export default function App() {
       world.camera.position.z = THREE.MathUtils.damp(world.camera.position.z, targetCamZ, 8, delta);
       world.camera.lookAt(playerPos.current.x, playerPos.current.y + 1.4, playerPos.current.z);
 
-      // 4. Update Organelles & Collectibles
-      world.update(delta);
+      // 4. Update Organelles, Collectibles & Navigation Laser
+      world.update(delta, playerPos.current, isGuideModeActiveRef.current);
 
       // Check Collectibles Pickup (Ultra-smooth zero-lag ATP collection)
       world.collectibles.forEach((item) => {
@@ -1234,6 +1272,8 @@ export default function App() {
       <ControlDock
         isCollapsed={isDockCollapsed}
         onToggleCollapse={() => setIsDockCollapsed(!isDockCollapsed)}
+        isGuideModeActive={isGuideModeActive}
+        onToggleGuideMode={handleToggleGuideMode}
         onOpenAvatarCustomizer={() => setActiveModal('customizer')}
         onOpenTrailCustomizer={() => setActiveModal('trail')}
         onOpenMiniGames={() => setActiveModal('mini_games')}

@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { ORGANELLES } from '../data/biologyData';
 import { OrganelleInfo } from '../types/game';
 import { FootstepTrailSystem } from './FootstepTrailSystem';
+import { NavigationLaserSystem } from './NavigationLaserSystem';
 
 export interface CollectibleItem {
   id: string;
@@ -24,6 +25,7 @@ export class CellWorld3D {
   public organelleMarkers: Map<string, THREE.Group> = new Map();
   public interactiveOrganelles: OrganelleInfo[] = ORGANELLES;
   public footstepTrailSystem: FootstepTrailSystem;
+  public navigationLaser: NavigationLaserSystem;
 
   private clock: THREE.Clock;
   private animTime: number = 0;
@@ -150,6 +152,7 @@ export class CellWorld3D {
     this.buildMicrotubuleBridges();
     this.spawnCollectibles();
     this.footstepTrailSystem = new FootstepTrailSystem(this.scene, this.isSoftwareGl);
+    this.navigationLaser = new NavigationLaserSystem(this.scene, this.interactiveOrganelles, this.isSoftwareGl);
   }
 
   private buildCytoplasmFloor() {
@@ -804,7 +807,7 @@ export class CellWorld3D {
     return false;
   }
 
-  public update(delta: number) {
+  public update(delta: number, playerPos?: THREE.Vector3, isGuideModeActive?: boolean) {
     this.animTime += delta;
 
     // Animate DNA helix
@@ -987,6 +990,11 @@ export class CellWorld3D {
 
     // Animate Footstep & Bioluminescent Trail Particles
     this.footstepTrailSystem.update(delta);
+
+    // Animate Floor Laser Navigation Path (Mode Bantu)
+    if (playerPos) {
+      this.navigationLaser.update(playerPos, !!isGuideModeActive, delta);
+    }
   }
 
   public setPhotosynthesisActive(active: boolean) {
@@ -1245,6 +1253,7 @@ export class CellWorld3D {
     this.oxygenGeo?.dispose();
     this.glucoseGeo?.dispose();
     this.footstepTrailSystem.destroy();
+    this.navigationLaser.destroy();
     this.renderer.dispose();
   }
 }

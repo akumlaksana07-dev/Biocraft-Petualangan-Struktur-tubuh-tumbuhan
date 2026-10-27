@@ -325,20 +325,25 @@ const leaderboardRecords: Map<string, LeaderboardRecord> = new Map([
   ],
 ]);
 
-// Helper to get sorted Top 20
+// Helper to get sorted Top 20 - strictly players who have actually played (score > 0 and completedLevels >= 1)
 function getTop20Leaderboard() {
-  const sorted = Array.from(leaderboardRecords.values()).sort((a, b) => b.score - a.score);
+  const sorted = Array.from(leaderboardRecords.values())
+    .filter((item) => typeof item.score === 'number' && item.score > 0 && (item.completedLevels || 0) >= 1)
+    .sort((a, b) => b.score - a.score);
   return sorted.slice(0, 20).map((item, index) => ({
     ...item,
     rank: index + 1,
   }));
 }
 
-// GET Leaderboard Top 20
+// GET Leaderboard Top 20 (Only played records)
 app.get('/api/leaderboard', (req, res) => {
+  const activeRecords = Array.from(leaderboardRecords.values()).filter(
+    (item) => typeof item.score === 'number' && item.score > 0 && (item.completedLevels || 0) >= 1
+  );
   res.json({
     status: 'ok',
-    totalPlayers: leaderboardRecords.size,
+    totalPlayers: activeRecords.length,
     leaderboard: getTop20Leaderboard(),
   });
 });
@@ -351,12 +356,24 @@ app.post('/api/leaderboard', (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
+    const numScore = Number(score) || 0;
+    const numLevels = Number(completedLevels) || 0;
+
+    // Strict validation: Don't put anyone on the scoreboard who hasn't actually played / score <= 0
+    if (numScore <= 0 || numLevels < 1) {
+      return res.status(200).json({
+        status: 'ignored_unplayed',
+        message: 'Pemain belum memainkan game atau belum memiliki skor > 0. Tidak dimasukkan ke papan skor.',
+        leaderboard: getTop20Leaderboard(),
+      });
+    }
+
     const playerId = id || `user_${name.toLowerCase().replace(/\s+/g, '_')}`;
     const existing = leaderboardRecords.get(playerId);
 
-    const updatedScore = Math.max(existing?.score || 0, Number(score) || 0);
+    const updatedScore = Math.max(existing?.score || 0, numScore);
     const updatedAtp = Math.max(existing?.atp || 0, Number(atp) || 0);
-    const updatedLevels = Math.max(existing?.completedLevels || 0, Number(completedLevels) || 0);
+    const updatedLevels = Math.max(existing?.completedLevels || 0, numLevels);
 
     const nowStr = new Date().toLocaleDateString('id-ID', {
       day: 'numeric',

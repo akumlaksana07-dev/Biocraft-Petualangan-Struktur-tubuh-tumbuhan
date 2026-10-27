@@ -46,7 +46,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data.leaderboard && Array.isArray(data.leaderboard)) {
-          setLeaderboard(data.leaderboard);
+          // Strictly filter only players who have played and scored
+          const playedOnly = data.leaderboard.filter(
+            (item: LeaderboardEntry) => typeof item.score === 'number' && item.score > 0
+          );
+          setLeaderboard(playedOnly);
         }
       }
     } catch (err) {
@@ -91,7 +95,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 Papan Peringkat Teratas (Top 20)
               </h2>
               <p className="text-xs text-slate-300">
-                Peringkat terakumulasi dari seluruh siswa yang telah menyelesaikan kuis & misi seluler
+                Khusus akumulasi skor siswa yang telah bermain & menyelesaikan kuis atau misi seluler
               </p>
             </div>
           </div>
@@ -295,16 +299,31 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         {/* Footer: Current Player Status Banner */}
         <div className="p-4 bg-slate-950 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+              currentPlayerScore > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+            }`}>
               <User className="w-4 h-4" />
             </div>
             <div>
               <div className="font-bold text-white flex items-center gap-1.5">
                 <span>{currentPlayerName || 'Siswa IPA'}</span>
-                <span className="text-slate-400 font-normal">({currentPlayerSchool})</span>
+                <span className="text-slate-400 font-normal">({currentPlayerSchool || 'SMP Indonesia'})</span>
+                {currentPlayerScore > 0 && myRankIndex >= 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-mono font-bold">
+                    Peringkat #{myRankIndex + 1}
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] text-emerald-400 font-mono">
-                Skor Akumulasi Kamu: <strong>{currentPlayerScore} Poin</strong> • {currentPlayerAtp} ATP
+              <div className="text-[11px] font-mono mt-0.5">
+                {currentPlayerScore > 0 ? (
+                  <span className="text-emerald-400">
+                    Skor Akumulasi Kamu: <strong>{currentPlayerScore} Poin</strong> • {currentPlayerAtp} ATP • Level {completedLevelsCount}/4
+                  </span>
+                ) : (
+                  <span className="text-amber-400/90 flex items-center gap-1">
+                    <span>🎮 Belum ada riwayat bermain. Selesaikan Kuis IPA atau kumpulkan ATP untuk masuk ke Top 20!</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>

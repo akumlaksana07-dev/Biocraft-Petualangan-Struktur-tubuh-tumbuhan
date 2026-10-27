@@ -1,10 +1,12 @@
 import React from 'react';
-import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck, Footprints, GraduationCap } from 'lucide-react';
+import { User, Gamepad2, BookOpen, Award, Target, Users, ChevronDown, ChevronUp, Trophy, UserCheck, Footprints, GraduationCap, Compass, Navigation } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 
 interface ControlDockProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  isGuideModeActive?: boolean;
+  onToggleGuideMode?: () => void;
   onOpenAvatarCustomizer: () => void;
   onOpenTrailCustomizer: () => void;
   onOpenMiniGames: () => void;
@@ -21,6 +23,8 @@ interface ControlDockProps {
 export const ControlDock: React.FC<ControlDockProps> = ({
   isCollapsed,
   onToggleCollapse,
+  isGuideModeActive = false,
+  onToggleGuideMode,
   onOpenAvatarCustomizer,
   onOpenTrailCustomizer,
   onOpenMiniGames,
@@ -87,6 +91,39 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         >
           <Footprints className="w-4 h-4 sm:w-5 sm:h-5 text-teal-300 mb-0.5" />
           <span className="text-[9px] sm:text-[10px] font-bold tracking-tight">Jejak Kaki</span>
+        </button>
+
+        {/* 1c. Mode Bantu: Sinar Laser Tipis di Lantai Menuju Organel Terdekat */}
+        <button
+          onClick={() => {
+            sounds.playScan();
+            if (onToggleGuideMode) onToggleGuideMode();
+          }}
+          className={`flex flex-col items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-2xl transition-all min-w-[62px] sm:min-w-[72px] border active:scale-95 ${
+            isGuideModeActive
+              ? 'bg-gradient-to-t from-cyan-950 via-teal-950 to-slate-900 border-cyan-400 text-cyan-200 shadow-md shadow-cyan-500/25 ring-1 ring-cyan-400/50'
+              : 'bg-white/5 hover:bg-cyan-950/30 border-transparent hover:border-cyan-400/40 text-slate-300 hover:text-white'
+          }`}
+          title="Mode Bantu (Tekan B): Tampilkan Sinar Laser Tipis di Lantai Menuju Organel Terdekat"
+        >
+          <div className="relative mb-0.5">
+            <Compass className={`w-4 h-4 sm:w-5 sm:h-5 ${isGuideModeActive ? 'text-cyan-300 animate-spin' : 'text-slate-400'}`} style={{ animationDuration: '6s' }} />
+            {isGuideModeActive && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] sm:text-[10px] font-black tracking-tight">Bantu</span>
+            <span
+              className={`text-[8px] font-mono px-1 py-0.2 rounded font-extrabold uppercase ${
+                isGuideModeActive
+                  ? 'bg-cyan-400 text-slate-950'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {isGuideModeActive ? 'ON' : 'OFF'}
+            </span>
+          </div>
         </button>
 
         {/* 2. Mini-Games Lab */}
