@@ -31,7 +31,8 @@ import { LevelTransitionOverlay } from './components/LevelTransitionOverlay';
 import { LoginOnboardingModal } from './components/LoginOnboardingModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { sounds } from './utils/soundEffects';
-import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck, Footprints, Compass, Trophy, GraduationCap, School } from 'lucide-react';
+import { positionalAudio, PositionalAudioStatus } from './utils/positionalAudio';
+import { Volume2, VolumeX, Maximize2, Sparkles, HelpCircle, Zap, UserCheck, Footprints, Compass, Trophy, GraduationCap, School, Radio, Activity } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 const DEFAULT_CUSTOMIZATION: Customization = {
@@ -68,14 +69,34 @@ export default function App() {
     };
   });
 
+  // Mandatory login before starting: require both Name and School
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('biocraft_student_profile');
-      return !saved || !JSON.parse(saved).name;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return !parsed.name || !parsed.school;
+      }
+      return true;
     } catch {
       return true;
     }
   });
+
+  // Sequential Level Progression: Level 1 must be completed to unlock Level 2
+  const [unlockedLevel, setUnlockedLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_unlocked_level');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 1) return val;
+      }
+    } catch {}
+    return 1;
+  });
+
+  // Real-time Positional Audio Status for HUD
+  const [audioStatus, setAudioStatus] = useState<PositionalAudioStatus>(positionalAudio.currentStatus);
 
   const [playerName, setPlayerName] = useState<string>(() => {
     try {
@@ -670,12 +691,21 @@ export default function App() {
 
       const now = performance.now();
 
-      // Sync mini-map & directional compass heading (throttled ~12 times/sec for smooth non-blocking UI update)
+      // Update Positional Audio System (Organelle Hums & Cellular Fluid Flow)
+      positionalAudio.update(
+        playerPos.current,
+        hasInput,
+        isSprinting.current,
+        photosynthesisReady
+      );
+
+      // Sync mini-map, compass heading & positional audio HUD status (throttled ~12 times/sec)
       if (now - lastMapSync > 80) {
         lastMapSync = now;
         setMapPlayerPos({ x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z });
         setMapPlayerRotY(localAvatar.group.rotation.y);
         setMapCameraTheta(cameraAngle.current.theta);
+        setAudioStatus({ ...positionalAudio.currentStatus });
       }
 
       // 5. Network Sync (throttle to 15 times/sec)
@@ -901,8 +931,12 @@ export default function App() {
     }
   };
 
-  // Teleport to 3D coordinate with Cinematic Warp Portal Transition
+  // Teleport to 3D coordinate with Cinematic Warp Portal Transition (Stabilized & Smooth)
   const handleTeleportTo = (pos: [number, number, number], label: string = 'Organel Sel') => {
+    setActiveModal(null);
+    setIsTriviaOpen(false);
+    moveVector.current = { x: 0, y: 0 };
+    keysPressed.current.clear();
     pendingTeleportPosRef.current = pos;
     setWarpTargetInfo({
       title: `Warp Portal: ${label}`,
@@ -919,6 +953,23 @@ export default function App() {
         pendingTeleportPosRef.current[1] + 1.0,
         pendingTeleportPosRef.current[2] + 4.0
       );
+      playerVelocityY.current = 0;
+      isGrounded.current = true;
+      moveVector.current = { x: 0, y: 0 };
+      keysPressed.current.clear();
+
+      if (localAvatarRef.current) {
+        localAvatarRef.current.group.position.copy(playerPos.current);
+      }
+      if (worldRef.current) {
+        worldRef.current.camera.position.set(
+          playerPos.current.x,
+          playerPos.current.y + 3.0,
+          playerPos.current.z + 7.5
+        );
+        worldRef.current.camera.lookAt(playerPos.current.x, playerPos.current.y + 1.4, playerPos.current.z);
+      }
+
       showToast('🚀 Teleportasi berhasil!');
       pendingTeleportPosRef.current = null;
     }
@@ -957,6 +1008,8 @@ export default function App() {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     sounds.enabled = !nextMuted;
+    positionalAudio.setMuted(nextMuted);
+    showToast(nextMuted ? '🔇 Audio Dibisukan' : '🔊 Audio & Akustik Organel Diaktifkan');
   };
 
   // Toggle Fullscreen
@@ -993,6 +1046,9 @@ export default function App() {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-bold text-white leading-tight">{playerName}</span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.2 rounded border border-amber-400/30">
+                Level {unlockedLevel}
+              </span>
               <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-400/30">
                 {studentProfile.grade || 'SMP VIII'}
               </span>
@@ -1020,6 +1076,24 @@ export default function App() {
               {score} Pts
             </span>
           </button>
+
+          {/* Positional Audio Organelle Resonance Pill */}
+          <div
+            className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-lg backdrop-blur-md transition-all ${
+              audioStatus.nearestOrganelleName
+                ? 'bg-emerald-950/80 border-emerald-400/60 text-emerald-300 shadow-emerald-500/10'
+                : 'bg-slate-900/85 border-white/10 text-slate-400'
+            }`}
+            title={`Akustik 3D Organel: ${audioStatus.soundDescription || 'Aliran Sitosol'}`}
+          >
+            <Activity className={`w-3.5 h-3.5 ${audioStatus.nearestOrganelleName ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+            <span className="text-[11px] font-bold">
+              {audioStatus.nearestOrganelleName ? audioStatus.nearestOrganelleName : 'Aliran Sitosol'}
+            </span>
+            <span className="text-[9px] font-mono font-bold bg-white/10 px-1 py-0.2 rounded">
+              {audioStatus.intensityPercent}%
+            </span>
+          </div>
 
           {/* Personal ATP */}
           <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-amber-400/40 shadow-lg">
@@ -1274,12 +1348,17 @@ export default function App() {
         }}
       />
 
-      {/* Multi-Level Quiz Modal */}
+      {/* Multi-Level Quiz Modal with Sequential Gating */}
       <QuizModal
         isOpen={activeModal === 'quiz'}
         onClose={() => setActiveModal(null)}
         playerName={playerName}
         playerSchool={studentProfile.school}
+        unlockedLevel={unlockedLevel}
+        onLevelUnlocked={(newLevel) => {
+          setUnlockedLevel(newLevel);
+          showToast(`🌟 Level ${newLevel} Berhasil Terbuka!`);
+        }}
         onOpenLeaderboard={() => setActiveModal('leaderboard')}
         onQuizComplete={(finalScore, levelId, atpReward) => {
           setScore((s) => {
@@ -1303,6 +1382,11 @@ export default function App() {
           if (finalScore >= 90) {
             recordAchievementProgress('ach_quiz_perfect', 10);
           }
+
+          // Automatically open Leaderboard so player immediately sees their rank among Top 20!
+          setTimeout(() => {
+            setActiveModal('leaderboard');
+          }, 1200);
         }}
       />
 
@@ -1392,6 +1476,29 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Papan Peringkat Akumulasi Top 20 Pemain */}
+      <LeaderboardModal
+        isOpen={activeModal === 'leaderboard'}
+        onClose={() => setActiveModal(null)}
+        currentPlayerName={playerName}
+        currentPlayerSchool={studentProfile.school}
+        currentPlayerScore={score}
+        currentPlayerAtp={atpCount}
+        completedLevelsCount={unlockedLevel}
+      />
+
+      {/* Halaman Login Wajib & Panduan Belajar Sederhana */}
+      <LoginOnboardingModal
+        isOpen={isLoginModalOpen || activeModal === 'login_profile'}
+        onClose={() => {
+          setIsLoginModalOpen(false);
+          if (activeModal === 'login_profile') setActiveModal(null);
+        }}
+        currentProfile={studentProfile}
+        onSaveProfile={handleSaveStudentProfile}
+        isFirstTime={!studentProfile.name || !studentProfile.school}
+      />
     </div>
   );
 }

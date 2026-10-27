@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { QUIZ_QUESTIONS, QUIZ_LEVELS, QuizLevelMeta } from '../data/biologyData';
 import { QuizQuestion } from '../types/game';
 import {
@@ -17,6 +17,7 @@ import {
   RefreshCw,
   BookOpen,
   Trophy,
+  Lock,
 } from 'lucide-react';
 import { sounds } from '../utils/soundEffects';
 import { LevelTransitionOverlay } from './LevelTransitionOverlay';
@@ -27,6 +28,8 @@ interface QuizModalProps {
   onClose: () => void;
   playerName: string;
   playerSchool?: string;
+  unlockedLevel?: number;
+  onLevelUnlocked?: (level: number) => void;
   onQuizComplete: (score: number, levelId: number, atpReward: number) => void;
   onOpenLeaderboard?: () => void;
 }
@@ -36,6 +39,8 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   onClose,
   playerName,
   playerSchool = 'SMP Indonesia',
+  unlockedLevel: propUnlockedLevel = 1,
+  onLevelUnlocked,
   onQuizComplete,
   onOpenLeaderboard,
 }) => {
@@ -43,6 +48,25 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   const [viewState, setViewState] = useState<'level_select' | 'in_quiz' | 'result'>('level_select');
   const [selectedLevel, setSelectedLevel] = useState<QuizLevelMeta>(QUIZ_LEVELS[0]);
   const [levelScores, setLevelScores] = useState<Record<number, { score: number; stars: number }>>({});
+
+  // Active Unlocked Level (Sequential: Level 1 must be passed to unlock Level 2)
+  const [unlockedLevel, setUnlockedLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('biocraft_unlocked_level');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 1) return Math.max(val, propUnlockedLevel);
+      }
+    } catch {}
+    return Math.max(1, propUnlockedLevel);
+  });
+
+  // Keep synced if prop changes
+  useEffect(() => {
+    if (propUnlockedLevel > unlockedLevel) {
+      setUnlockedLevel(propUnlockedLevel);
+    }
+  }, [propUnlockedLevel]);
 
   // Question replacement tracking (persisted so answered questions get filtered out and replaced)
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<number>>(() => {
@@ -192,11 +216,22 @@ export const QuizModal: React.FC<QuizModalProps> = ({
 
       const passed = finalScorePercent >= selectedLevel.minPassScore;
       const atpEarned = passed ? selectedLevel.atpReward : Math.floor(selectedLevel.atpReward * 0.25);
-      onQuizComplete(finalScorePercent, selectedLevel.id, atpEarned);
 
       if (passed) {
+        // Sequentially unlock the next level! (Level 1 completed -> Level 2 unlocked)
+        const nextLvlId = selectedLevel.id + 1;
+        if (nextLvlId <= QUIZ_LEVELS.length && nextLvlId > unlockedLevel) {
+          setUnlockedLevel(nextLvlId);
+          try {
+            localStorage.setItem('biocraft_unlocked_level', String(nextLvlId));
+          } catch {}
+          onLevelUnlocked?.(nextLvlId);
+        }
+        sounds.playMilestone(100);
         confetti({ particleCount: 110, spread: 80 });
       }
+
+      onQuizComplete(finalScorePercent, selectedLevel.id, atpEarned);
     }
   };
 
@@ -283,9 +318,10 @@ export const QuizModal: React.FC<QuizModalProps> = ({
               )}
             </div>
 
-            {/* Level Cards */}
+            {/* Level Cards with Sequential Level Progression */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {QUIZ_LEVELS.map((lvl) => {
+                const isLocked = lvl.id > unlockedLevel;
                 const recorded = levelScores[lvl.id];
                 const allForLvl = QUIZ_QUESTIONS.filter((q) => q.levelId === lvl.id);
                 const unaskedCount = allForLvl.filter((q) => !answeredQuestionIds.has(q.id)).length;
@@ -293,46 +329,74 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                 return (
                   <div
                     key={lvl.id}
-                    onClick={() =>
+                    onClick={() => {
+                      if (isLocked) {
+                        sounds.playWrong();
+                        return;
+                      }
                       handleStartLevelWithTransition(
                         lvl,
                         `Memasuki ${lvl.title} • Menyiapkan Soal Kurikulum...`
-                      )
-                    }
-                    className="p-4 rounded-2xl border border-white/15 hover:border-emerald-400/80 bg-slate-800/70 hover:bg-slate-800/90 transition-all cursor-pointer shadow-md flex flex-col justify-between space-y-3 group active:scale-[0.98]"
-                    style={{ borderLeftColor: lvl.color, borderLeftWidth: '5px' }}
+                      );
+                    }}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 shadow-md relative overflow-hidden ${
+                      isLocked
+                        ? 'bg-slate-900/60 border-slate-750 opacity-60 cursor-not-allowed select-none'
+                        : 'border-white/15 hover:border-emerald-400/80 bg-slate-800/70 hover:bg-slate-800/90 cursor-pointer group active:scale-[0.98]'
+                    }`}
+                    style={{ borderLeftColor: isLocked ? '#475569' : lvl.color, borderLeftWidth: '5px' }}
                   >
+                    {isLocked && (
+                      <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-950/90 px-2.5 py-1 rounded-full border border-slate-700 text-[10px] text-slate-300 font-bold shadow-md">
+                        <Lock className="w-3 h-3 text-rose-400" />
+                        <span>Terkunci</span>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white">
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          isLocked ? 'bg-slate-800 text-slate-400' : 'bg-white/10 text-white'
+                        }`}>
                           {lvl.badge}
                         </span>
-                        <div className="flex items-center text-amber-400">
-                          {[1, 2, 3].map((starIdx) => (
-                            <Star
-                              key={starIdx}
-                              className={`w-3.5 h-3.5 ${
-                                recorded && recorded.stars >= starIdx
-                                  ? 'fill-amber-400 text-amber-400'
-                                  : 'text-slate-600'
-                              }`}
-                            />
-                          ))}
-                        </div>
+                        {!isLocked && (
+                          <div className="flex items-center text-amber-400">
+                            {[1, 2, 3].map((starIdx) => (
+                              <Star
+                                key={starIdx}
+                                className={`w-3.5 h-3.5 ${
+                                  recorded && recorded.stars >= starIdx
+                                    ? 'fill-amber-400 text-amber-400'
+                                    : 'text-slate-600'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      <h4 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors">
+                      <h4 className={`text-sm font-black transition-colors ${
+                        isLocked ? 'text-slate-400' : 'text-white group-hover:text-emerald-300'
+                      }`}>
                         {lvl.title}
                       </h4>
                       <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">
                         {lvl.description}
                       </p>
+
+                      {isLocked && (
+                        <div className="p-2 bg-rose-950/40 border border-rose-500/20 rounded-xl text-[10px] text-rose-300 font-semibold flex items-center gap-1.5">
+                          <Lock className="w-3 h-3 text-rose-400 shrink-0" />
+                          <span>Selesaikan Level {lvl.id - 1} terlebih dahulu untuk membuka level ini</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-white/10 text-[11px]">
-                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <span className={`${isLocked ? 'text-slate-500' : 'text-emerald-400'} font-semibold flex items-center gap-1`}>
                         <BookOpen className="w-3 h-3" />
-                        <span>{unaskedCount} soal baru tersedia</span>
+                        <span>{isLocked ? 'Level Belum Terbuka' : `${unaskedCount} soal baru tersedia`}</span>
                       </span>
                       <div className="flex items-center gap-1 text-amber-400 font-bold">
                         <Zap className="w-3.5 h-3.5 fill-current" />
@@ -602,7 +666,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
               </button>
 
               <div className="flex gap-2">
-                {nextLevel && (
+                {nextLevel && isPassed && (
                   <button
                     onClick={() =>
                       handleStartLevelWithTransition(
@@ -610,7 +674,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                         `Melompati Membran Menuju ${nextLevel.title}...`
                       )
                     }
-                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all active:scale-95"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all active:scale-95 animate-pulse"
                   >
                     <span>Lanjut ke Level {nextLevel.id}</span>
                     <ChevronRight className="w-4 h-4" />

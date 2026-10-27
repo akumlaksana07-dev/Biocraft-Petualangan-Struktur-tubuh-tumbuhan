@@ -36,7 +36,7 @@ export const LoginOnboardingModal: React.FC<LoginOnboardingModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'guide' | 'curriculum'>('login');
   const [name, setName] = useState(currentProfile.name || '');
-  const [school, setSchool] = useState(currentProfile.school || 'SMP Negeri 1');
+  const [school, setSchool] = useState(currentProfile.school || '');
   const [grade, setGrade] = useState(currentProfile.grade || 'Kelas VIII-A');
   const [title, setTitle] = useState(currentProfile.title || 'Penjelajah Sel Muda');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,11 +46,11 @@ export const LoginOnboardingModal: React.FC<LoginOnboardingModalProps> = ({
   const handleStartGame = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!name.trim()) {
-      setErrorMsg('Harap isi nama lengkap siswa terlebih dahulu!');
+      setErrorMsg('Wajib diisi: Harap masukkan nama lengkap siswa untuk memulai permainan!');
       return;
     }
     if (!school.trim()) {
-      setErrorMsg('Harap isi asal sekolah terlebih dahulu!');
+      setErrorMsg('Wajib diisi: Harap masukkan nama asal sekolah (SMP / MTs) untuk memulai permainan!');
       return;
     }
 

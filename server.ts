@@ -9,7 +9,32 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const port = process.env.PORT || 3000;
+
+function getPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (process.env.DEFAULT_APP_PORT) {
+    return parseInt(process.env.DEFAULT_APP_PORT, 10);
+  }
+  if (process.env.PORT) {
+    return parseInt(process.env.PORT, 10);
+  }
+  return 3000;
+}
+
+function getHost(): string {
+  const hostArgIndex = process.argv.indexOf('--host');
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return process.env.HOST || '0.0.0.0';
+}
+
+const port = getPort();
+const host = getHost();
 
 app.use(express.json());
 
@@ -588,8 +613,12 @@ async function startServer() {
     });
   }
 
-  server.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+  server.on('error', (err: any) => {
+    console.error('Server error:', err);
+  });
+
+  server.listen(port, host, () => {
+    console.log(`Server running at http://${host}:${port}`);
   });
 }
 
